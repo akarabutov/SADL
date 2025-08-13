@@ -154,9 +154,9 @@ template<typename T> bool MaxPool<T>::simd16_pool(std::vector<Tensor<T> *> &in)
   const int        step         = m_strides[1];
 
   // currently adhoc start
-  int start = offset_start;
-  __m256i xx{};
+  int start = offset_start;  
   m_out.quantizer   = in[0]->quantizer;     // adapt output width to bias
+
 
   for (int im_nb = 0; im_nb < N; ++im_nb)
   {
@@ -167,7 +167,7 @@ template<typename T> bool MaxPool<T>::simd16_pool(std::vector<Tensor<T> *> &in)
       {
         for (int im_d = 0; im_d < D; im_d+=16)
         {
-          bool firstElement = true;          
+          __m256i xx= _mm256_set1_epi16(-32768);           
           for (int filter_i = -offset_start; filter_i <= offset_end; ++filter_i)
           {
             for (int filter_j = -offset_start; filter_j <= offset_end; ++filter_j)
@@ -179,15 +179,7 @@ template<typename T> bool MaxPool<T>::simd16_pool(std::vector<Tensor<T> *> &in)
 
                 const __m256i *aptr = (const __m256i *) A.addr(im_nb, ii, jj, im_d);
                 const __m256i  v   = _mm256_load_si256(aptr);
-                if (firstElement)
-                {
-                  firstElement=false;
-                  xx=v;
-                }
-                else 
-                {
-                  xx = _mm256_max_epi16(xx, v);
-                }
+                xx = _mm256_max_epi16(xx, v);
               }
             }
           }
