@@ -50,7 +50,9 @@ public:
 protected:
   bool pool(std::vector<Tensor<T> *> &in);
 #if __AVX2__
-  bool simd16_pool(std::vector<Tensor<T> *> &in);
+  bool simd16_pool(std::vector<Tensor<T> *> &in) {
+      return pool(in);
+  }
 #endif
 
 protected:
@@ -139,11 +141,11 @@ template<typename T> bool MaxPool<T>::pool(std::vector<Tensor<T> *> &in)
 // kernel [1, kernel_height, kernel_width, 1]
 // stride [1, stride_height, stride_width, 1]
 #if __AVX2__
-template<typename T> bool MaxPool<T>::simd16_pool(std::vector<Tensor<T> *> &in)
+template<> inline bool MaxPool<int16_t>::simd16_pool(std::vector<Tensor<int16_t> *> &in)
 {
   assert(in.size() == 1);
   assert(in[0]->dims().size() == 4);
-
+  using T=int16_t;
   const Tensor<T> &A            = *in[0];
   const int        N            = m_out.dims()[0];
   const int        H            = m_out.dims()[1];
