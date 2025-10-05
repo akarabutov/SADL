@@ -128,6 +128,28 @@ template<typename T> bool Add<T>::apply(std::vector<Tensor<T> *> &in)
             return true;
           }
         }
+        if constexpr (std::is_same_v<T, int32_t>)
+        {
+          if (m_out.size() % 8 == 0) 
+          {
+            const __m256i     value = _mm256_set1_epi32(B[0]);
+#if SATURATE_RESULT
+            const __m256i     max   = _mm256_set1_epi32(std::numeric_limits<int32_t>::max());
+            const __m256i     min   = _mm256_set1_epi32(std::numeric_limits<int32_t>::min());
+#endif
+            T *a_ptr = m_out.data();
+            for (int64_t i = 0; i < m_out.size(); i += 8, a_ptr+=8)
+            {
+              __m256i x = _mm256_srai_epi32(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr)), shift);
+              __m256i result = _mm256_add_epi32(x, value);
+#if SATURATE_RESULT
+              result = _mm256_min_epi32(_mm256_max_epi32(result, min), max);
+#endif
+              _mm256_store_si256((__m256i *) a_ptr, result);
+            }
+            return true;
+          }
+        }
 #endif
         const T          value = B[0];
         for (auto &x: m_out)
@@ -251,6 +273,28 @@ template<typename T> bool Add<T>::apply(std::vector<Tensor<T> *> &in)
               __m256i result = _mm256_adds_epi16(x, value);
 #if SATURATE_RESULT
               result = _mm256_min_epi16(_mm256_max_epi16(result, min), max);
+#endif
+              _mm256_store_si256((__m256i *) a_ptr, result);
+            }
+            return true;
+          }
+        }
+        if constexpr(std::is_same_v<T, int32_t>)
+        {
+          if (m_out.size() % 8 == 0) 
+          {
+            const __m256i     value = _mm256_srai_epi32(_mm256_set1_epi32(B[0]), shift);
+#if SATURATE_RESULT
+            const __m256i     max   = _mm256_set1_epi32(std::numeric_limits<int32_t>::max());
+            const __m256i     min   = _mm256_set1_epi32(std::numeric_limits<int32_t>::min());
+#endif
+            T *a_ptr = m_out.data();
+            for (int64_t i = 0; i < m_out.size(); i += 8, a_ptr+=8)
+            {
+              __m256i x = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr));
+              __m256i result = _mm256_add_epi32(x, value);
+#if SATURATE_RESULT
+              result = _mm256_min_epi32(_mm256_max_epi32(result, min), max);
 #endif
               _mm256_store_si256((__m256i *) a_ptr, result);
             }
