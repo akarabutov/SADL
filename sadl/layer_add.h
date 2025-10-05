@@ -118,9 +118,8 @@ template<typename T> bool Add<T>::apply(std::vector<Tensor<T> *> &in)
             T *a_ptr = m_out.data();
             for (int64_t i = 0; i < m_out.size(); i += 16, a_ptr+=16)
             {
-              __m256i x = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr));
+              __m256i x = _mm256_srai_epi16(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr)), shift);
               __m256i result = _mm256_adds_epi16(x, value);
-              result = _mm256_srai_epi16(result, shift);
 #if SATURATE_RESULT
               result = _mm256_min_epi16(_mm256_max_epi16(result, min), max);
 #endif
