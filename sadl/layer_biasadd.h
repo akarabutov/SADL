@@ -123,10 +123,9 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
             const T *b_ptr = B.data();
             for (int i = 0; i < H; i += 16, a_ptr+=16, b_ptr+=16)
             {
-              __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr));
+              __m256i a = _mm256_slli_epi16(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr)), -shift);
               __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b_ptr));
               __m256i result = _mm256_adds_epi16(a, b);
-              result = _mm256_slli_epi16(result, shift);
 #if SATURATE_RESULT
               result = _mm256_min_epi16(_mm256_max_epi16(result, min), max);
 #endif
@@ -255,10 +254,9 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
               const T *b_ptr = B.data();
               for (int i = 0; i < H; i += 16, a_ptr+=16, b_ptr+=16)
               {
-                __m256i a = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr));
+                __m256i a = _mm256_srai_epi16(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr)), shift);
                 __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b_ptr));
                 __m256i result = _mm256_adds_epi16(a, b);
-                result = _mm256_srai_epi16(result, shift);
 #if SATURATE_RESULT
                 result = _mm256_min_epi16(_mm256_max_epi16(result, min), max);
 #endif
