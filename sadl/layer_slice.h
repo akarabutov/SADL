@@ -98,6 +98,8 @@ template<typename T> bool Slice<T>::init(const std::vector<Tensor<T> *> &in)
   constexpr int pow2_31 = std::numeric_limits<int>::max();
   if (in.size() != 1)
     return false;
+  if (in[0]->dims()[0] != 1)
+    return false; // only batch size 1 supported
   SADL_DBG(std::cout << " - input Slice " << in[0]->dims() << std::endl);
 
   Dimensions dim;
