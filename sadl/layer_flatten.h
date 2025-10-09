@@ -69,15 +69,27 @@ template<typename T> bool Flatten<T>::init(const std::vector<Tensor<T> *> &in)
 {
   if (in.size() != 1)
     return false;
+  if (m_axis >= in[0]->dims().size() || m_axis < (-in[0]->dims().size()))
+  {
+    std::cerr << "[ERROR] axis out of bounds: " << m_axis << std::endl;
+    return false;
+  }
+  if (m_axis < 0) m_axis += in[0]->dims().size();
   SADL_DBG(std::cout << "  - " << in[0]->dims() << std::endl);
-  int nb_dim = m_axis + 1;
+  int nb_dim = 2;
   m_dim.resize(nb_dim);
+  int s0 = 1;
   for (int k = 0; k < m_axis; ++k)
-    m_dim[k] = in[0]->dims()[k];
-  int s = 1;
+  {
+    s0 *= in[0]->dims()[k];
+  }
+  m_dim[0] = s0;
+  int s1 = 1;
   for (int k = m_axis; k < in[0]->dims().size(); ++k)
-    s *= in[0]->dims()[k];
-  m_dim[m_axis] = s;
+  {
+    s1 *= in[0]->dims()[k];
+  }
+  m_dim[1] = s1;
   SADL_DBG(std::cout << "  - new shape: " << m_dim << std::endl);
   m_out.resize(m_dim);
   m_initDone = true;
@@ -89,7 +101,7 @@ template<typename T> bool Flatten<T>::loadInternal(std::istream &file, Version)
   // load values
   int32_t x = 0;
   file.read((char *) &x, sizeof(x));
-  if (x <= 0 || x > Dimensions::MaxDim)
+  if (x > Dimensions::MaxDim)
   {
     std::cerr << "[ERROR] invalid axis: " << x << std::endl;
     return false;
