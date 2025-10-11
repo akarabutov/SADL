@@ -1339,6 +1339,31 @@ def parse_graph_node(
 
     elif node.op_type == "GridSample":
         # Currently, the official TensorFlow does not have an implementation for GridSample.
+        for node_input in [n0name, n1name]:
+            if is_constant(node_input, model_onnx.graph.initializer):
+                additional = {}
+                additional["data"] = node
+                n2 = getNodesWithOutput(node_input, model_onnx)
+                (
+                    additional["dims"],
+                    additional["raw_data"],
+                    additional["dtype"],
+                ) = extract_additional_data(
+                    node_input,
+                    node_annotation[n2.name].to_transpose,
+                    model_onnx.graph,
+                    verbose,
+                )
+                            
+                if force_transpose_constant_tensor_dim4 and len(additional["dims"]) == 4: # nchw -> nhwc
+                    additional["raw_data"], additional["dims"] = \
+                        transpose_constant_tensor_dim4(additional["raw_data"], additional["dims"], [0, 2, 3, 1])
+                        
+                map_onnx_to_myGraph[node_input] = node_input
+                myGraph[node_input] = {}
+                myGraph[node_input]["inputs"] = []
+                myGraph[node_input]["additional"] = additional
+                myGraph[node_input]["op_type"] = OPTYPE.Const
         align_corners = getAttribute(node, "align_corners").i
         mode = getAttribute(node, "mode").s.decode("utf-8")
         padding_mode = getAttribute(node, "padding_mode").s.decode("utf-8")
@@ -1348,7 +1373,7 @@ def parse_graph_node(
             quit("[ERROR] Currently, the mode of GridSample must in", mode_list, node)
         else:
             mode = mode_list.index(mode)
-        padding_mode_list = ["border"]
+        padding_mode_list = ["border", "zeros"]
         if not padding_mode in padding_mode_list:
             quit(
                 "[ERROR] Currently, the padding_mode of GridSample must in",
