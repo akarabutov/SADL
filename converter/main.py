@@ -2377,6 +2377,10 @@ def annotate_node(
                 a.i = 2
             elif a.i == -3:
                 a.i = -1
+            elif a.i == -2:
+                a.i = -3
+            elif a.i == -1:
+                a.i = -2
         if detect_silly_reshape(node, model_onnx, node_annotation, verbose):
             print("[WARNING] strange ONNX pattern detected and simplified")
 
