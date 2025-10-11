@@ -69,11 +69,12 @@ protected:
   };
   enum gridsample_paddingmode
   {
-    gridsample_paddingmode_border = 0
+    gridsample_paddingmode_border = 0,
+    gridsample_paddingmode_zeros  = 1
   };
   int m_align_corners;   // 0: False, 1: True
   int m_mode;            // 0: "nearest", 1: "bilinear", 2: "bicubic"
-  int m_padding_mode;    // 0: "border"
+  int m_padding_mode;    // 0: "border", 1: "zeros"
   int m_grid_quantizer;
   DUMP_MODEL_EXT;
 };
@@ -95,7 +96,7 @@ template<typename T> bool GridSample<T>::loadInternal(std::istream &file, Versio
     std::cerr << "[ERROR] invalid mode: " << m_mode << std::endl;
     return false;
   }
-  if (m_padding_mode != 0)
+  if (m_padding_mode != 0 && m_padding_mode != 1)
   {
     std::cerr << "[ERROR] invalid padding mode: " << m_padding_mode << std::endl;
     return false;
@@ -143,27 +144,61 @@ template<typename T> bool GridSample<T>::gridsample_nearest(std::vector<Tensor<T
   constexpr int im_nb = 0;
   int           H_in  = data.dims()[1];
   int           W_in  = data.dims()[2];
+  int           C     = data.dims()[3];
   int           H_out = grid.dims()[3];
   int           W_out = grid.dims()[1];
 
-  for (int im_j = 0; im_j < W_out; im_j++)
+  if (m_padding_mode == gridsample_paddingmode_zeros)
   {
-    for (int im_i = 0; im_i < H_out; im_i++)
+    for (int im_j = 0; im_j < W_out; im_j++)
     {
-      // compute pixel locations from the grid
-      T2 x = grid(im_nb, im_j, 0, im_i);
-      T2 y = grid(im_nb, im_j, 1, im_i);
-      gs_denormalize(x, W_in);
-      gs_denormalize(y, H_in);
-
-      // compute the output Y using data values and pixel locations
-      int x_int = int(x);
-      int y_int = int(y);
-      pixel_addr_at_grid(H_in, W_in, y_int, x_int);
-
-      nearest_in_channels(data, im_i, im_j, y_int, x_int, m_out);
+      for (int im_i = 0; im_i < H_out; im_i++)
+      {
+        // compute pixel locations from the grid
+        T2 x = grid(im_nb, im_j, 0, im_i);
+        T2 y = grid(im_nb, im_j, 1, im_i);
+        gs_denormalize(x, W_in);
+        gs_denormalize(y, H_in);
+  
+        // compute the output Y using data values and pixel locations
+        int x_int = int(x);
+        int y_int = int(y);
+        if (y_int < 0 || y_int >= H_in || x_int < 0 || x_int >= W_in)
+        {
+          for (int c = 0; c < C; ++c)
+          {
+            m_out(0, im_i, im_j, c) = (T)0;
+          }
+        }
+        else
+        {
+          pixel_addr_at_grid(H_in, W_in, y_int, x_int);
+          nearest_in_channels(data, im_i, im_j, y_int, x_int, m_out);
+        }
+      }
     }
   }
+  else
+  {
+    for (int im_j = 0; im_j < W_out; im_j++)
+    {
+      for (int im_i = 0; im_i < H_out; im_i++)
+      {
+        // compute pixel locations from the grid
+        T2 x = grid(im_nb, im_j, 0, im_i);
+        T2 y = grid(im_nb, im_j, 1, im_i);
+        gs_denormalize(x, W_in);
+        gs_denormalize(y, H_in);
+  
+        // compute the output Y using data values and pixel locations
+        int x_int = int(x);
+        int y_int = int(y);
+        pixel_addr_at_grid(H_in, W_in, y_int, x_int);
+        nearest_in_channels(data, im_i, im_j, y_int, x_int, m_out);
+      }
+    }
+  }
+  
   return true;
 }
 
@@ -211,6 +246,13 @@ template<typename T> bool GridSample<T>::gridsample_bilinear(std::vector<Tensor<
       int &x_ori_left = pos[0], &y_ori_top = pos[1], &x_ori_right = pos[2], &y_ori_bottom = pos[3];
 
       get_bilinear_coeffs(y, x, pos, coeffs);
+      if (m_padding_mode == gridsample_paddingmode_zeros)
+      {
+        if (!(y_ori_top    >= 0 && y_ori_top    < H_in && x_ori_left  >= 0 && x_ori_left  < W_in)) coeffs[0] = (T2)0;
+        if (!(y_ori_top    >= 0 && y_ori_top    < H_in && x_ori_right >= 0 && x_ori_right < W_in)) coeffs[1] = (T2)0;
+        if (!(y_ori_bottom >= 0 && y_ori_bottom < H_in && x_ori_left  >= 0 && x_ori_left  < W_in)) coeffs[2] = (T2)0;
+        if (!(y_ori_bottom >= 0 && y_ori_bottom < H_in && x_ori_right >= 0 && x_ori_right < W_in)) coeffs[3] = (T2)0;
+      }
       pixel_addr_at_grid(H_in, W_in, y_ori_top, x_ori_left);
       pixel_addr_at_grid(H_in, W_in, y_ori_top, x_ori_right);
       pixel_addr_at_grid(H_in, W_in, y_ori_bottom, x_ori_left);
@@ -259,7 +301,31 @@ template<typename T> bool GridSample<T>::gridsample_bicubic(std::vector<Tensor<T
 
       // coeffs
       get_bicubic_coeffs(y, x, coeffs);
-
+      
+      if (m_padding_mode == gridsample_paddingmode_zeros)
+      {
+        T x_int, y_int;
+        if constexpr (std::is_same_v<T, float>)
+        {
+          x_int = std::floor(x);
+          y_int = std::floor(y);
+        }
+        else
+        {
+          x_int = (int)(x >> shift);   // floor
+          y_int = (int)(y >> shift);
+        }
+        int idx = 0;
+        for (int dy = -1; dy <= 2; dy++)
+        {
+          for (int dx = -1; dx <= 2; dx++)
+          {
+            if (!(y_int + dy >= 0 && y_int + dy < H_in && x_int + dx >= 0 && x_int + dx < W_in))
+              coeffs[idx] = (T2)0;
+            idx++;
+          }
+        }
+      }
       BICUBIC_COUNTERS(data, coeffs);
       bicubic_in_channels(data, coeffs, pos, shift, im_i, im_j, m_out);
     }
@@ -349,7 +415,7 @@ template<typename T> void GridSample<T>::get_bilinear_coeffs(T2 y, T2 x, int pos
 
 template<typename T> void GridSample<T>::pixel_addr_at_grid(int H, int W, int &i, int &j)
 {
-  if (m_padding_mode == gridsample_paddingmode_border)
+  if (m_padding_mode == gridsample_paddingmode_border || m_padding_mode == gridsample_paddingmode_zeros)
   {
     i = (i < 0) ? 0 : ((i > H - 1) ? H - 1 : i);
     j = (j < 0) ? 0 : ((j > W - 1) ? W - 1 : j);
