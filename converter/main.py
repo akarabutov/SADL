@@ -132,7 +132,8 @@ class OPTYPE(IntEnum):
     ReduceMean = (29,)
     Tile = (30,)
     Pad = (31,)
-
+    Floor = (32,)
+    
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
     BatchMatMulV2 = 6
@@ -1745,7 +1746,16 @@ def parse_graph_node(
         myGraph[node.output[0]]["additional"]["pads"] = pads_hw
         myGraph[node.output[0]]["additional"]["data"] = node
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
-
+    elif node.op_type == "Floor":
+        inputs, additional = [], {}
+        inputs = [map_onnx_to_myGraph[n0name]]
+        additional["data"] = node
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["inputs"] = inputs
+        myGraph[node.output[0]]["additional"] = additional
+        myGraph[node.output[0]]["op_type"] = OPTYPE.Floor
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]
+        
     else:
         raise Exception("[ERROR] node not supported:\n{})".format(node))
 

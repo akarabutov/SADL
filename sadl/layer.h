@@ -79,7 +79,8 @@ struct OperationType
     ReduceMean         = 29,
     Tile               = 30,
     Pad                = 31,
-    OperationTypeCount = 32,
+    Floor              = 32,
+    OperationTypeCount = 33,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 
   };
