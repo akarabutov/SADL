@@ -52,7 +52,7 @@ protected:
   Tensor<T2> result;
   bool keepdims;
   Dimensions axes, reduce_dims;
-  int cnt, divq, q;
+  int cnt, divq, q, r, N, divq_bits, acc_bits, shift_bits, r_shift, q2, r2, N2;
   virtual bool loadInternal(std::istream &file, Version v) override;
   DUMP_MODEL_EXT;
 };
@@ -60,8 +60,9 @@ protected:
 template<typename T> bool ReduceMean<T>::apply(std::vector<Tensor<T> *> &in)
 {
   assert(in.size() == 1);
-
+  result.fill(0);
   const Tensor<T> &A = *in[0];
+  m_out.quantizer = A.quantizer;
   const int N = A.dims()[0];
   const int H = A.dims()[1];
   const int W = A.dims()[2];
@@ -83,36 +84,63 @@ template<typename T> bool ReduceMean<T>::apply(std::vector<Tensor<T> *> &in)
           T2 num = A(im_nb, im_i, im_j, im_d);
           num += result(ni, hi, wi, ci);
           COUNTERS(num);
-          SATURATE(num);
           result(ni, hi, wi, ci) = num;
         }
       }
     }
   }
-
   // Compute the mean
-  for (int im_nb = 0; im_nb < result.dims()[0]; ++im_nb)
+  if constexpr (std::is_same<T, float>::value) 
   {
-    for (int im_i = 0; im_i < result.dims()[1]; ++im_i)
-    {
-      for (int im_j = 0; im_j < result.dims()[2]; ++im_j)
-      {
-        for (int im_d = 0; im_d < result.dims()[3]; ++im_d)
-        {
-          // average
-          T2 num = result(im_nb, im_i, im_j, im_d);
-          if constexpr (std::is_same<T,float>::value)
+    for (int im_nb = 0; im_nb < result.dims()[0]; ++im_nb) {
+      for (int im_i = 0; im_i < result.dims()[1]; ++im_i) {
+        for (int im_j = 0; im_j < result.dims()[2]; ++im_j) {
+          for (int im_d = 0; im_d < result.dims()[3]; ++im_d) {
+            // average
+            T2 num = result(im_nb, im_i, im_j, im_d);
             num /= cnt;
-          else
-            num = (num * divq) >> q;
-          COUNTERS(num);
-          SATURATE(num);
-          m_out(im_nb, im_i, im_j, im_d) = static_cast<T>(num);
+            COUNTERS(num);
+            m_out(im_nb, im_i, im_j, im_d) = static_cast<T>(num);
+          }
+        }
+      }
+    }
+  } 
+  else 
+  {
+    if (divq_bits + acc_bits + N <= N2) { // can do in one step
+      for (int im_nb = 0; im_nb < result.dims()[0]; ++im_nb) {
+        for (int im_i = 0; im_i < result.dims()[1]; ++im_i) {
+          for (int im_j = 0; im_j < result.dims()[2]; ++im_j) {
+            for (int im_d = 0; im_d < result.dims()[3]; ++im_d) {
+              T2 num = result(im_nb, im_i, im_j, im_d);
+              num = (num * divq + r) >> q;
+              COUNTERS(num);
+              SATURATE(num);
+              m_out(im_nb, im_i, im_j, im_d) = static_cast<T>(num);
+            }
+          }
+        }
+      }
+    } 
+    else 
+    {
+      for (int im_nb = 0; im_nb < result.dims()[0]; ++im_nb) {
+        for (int im_i = 0; im_i < result.dims()[1]; ++im_i) {
+          for (int im_j = 0; im_j < result.dims()[2]; ++im_j) {
+            for (int im_d = 0; im_d < result.dims()[3]; ++im_d) {
+              T2 num = result(im_nb, im_i, im_j, im_d); // give room for divq
+              T2 temp = (num + r_shift) >> shift_bits;
+              num = (temp * divq + r2) >> q2;
+              COUNTERS(num);
+              SATURATE(num);
+              m_out(im_nb, im_i, im_j, im_d) = static_cast<T>(num);
+            }
+          }
         }
       }
     }
   }
-
   return true;
 }
 
@@ -147,9 +175,23 @@ template<typename T> bool ReduceMean<T>::init(const std::vector<Tensor<T> *> &in
   }
   assert(cnt != 0);
 
-  const int acc_bits = (int) ceil(log2(cnt));
-  q        = sizeof(T) * 8 - 1 - acc_bits;
-  divq     = (1 << q) / cnt;
+  // during init
+  acc_bits = (int) ceil(log2(cnt)); // to transform with int operation
+  N=sizeof(T)*8-1;   // latent bitdepth
+  N2=sizeof(T2)*8-1; // accumulator bitdepth
+  int minAccuracydivQ=N; // minimum bitdepth of divq
+  const int bitdepth_acc=N+acc_bits;
+  const int maxbitdepth_divq=N2-bitdepth_acc; // try to use maximum of bits
+  const int minq=std::max(minAccuracydivQ,maxbitdepth_divq); 
+    
+  q=std::min(N2,minq+acc_bits-1);      // bitdepth multiplier before division
+  divq = ((1LL << q) + cnt/2) / cnt;   // possible overflow here TBC 
+  divq_bits=(int) ceil(log2(divq)); // to transform with int operation
+  shift_bits = divq_bits-std::max(N2-(acc_bits+N),0); // for 2 steps
+  q2=q-shift_bits;
+  r=(1LL<<q)/2;
+  r_shift= (1LL<<shift_bits)/2;
+  r2=(1LL<<q2)/2;  
 
   m_initDone = true;
   return true;
