@@ -31,6 +31,7 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 #pragma once
+#include <cstring>   // for std::memcpy
 #include "layer.h"
 
 namespace sadl
@@ -43,6 +44,7 @@ public:
   using Layer<T>::Layer;
   using Layer<T>::m_out;   // to avoid this->
   using Layer<T>::m_initDone;
+  int m_axis = 0;
 
   virtual bool apply(std::vector<Tensor<T> *> &in) override;
   virtual bool init(const std::vector<Tensor<T> *> &in) override;
@@ -55,7 +57,8 @@ template<typename T> bool Concat<T>::apply(std::vector<Tensor<T> *> &in)
 {
   assert(in.size() >= 3);
   const int nb_in = (int) in.size() - 1;                                                                        // without axis inputs
-  assert((*in[nb_in]).size() == 1 && ((*in[nb_in])[0] == in[0]->dims().size() - 1 || (*in[nb_in])[0] == -1));   // currently concat on last axis
+  const int axis  = m_axis;
+  assert(axis >= 0 && axis < in[0]->dims().size());
   int shift[16] = {};
   int qmin      = in.front()->quantizer;
   if (!std::is_same<T, float>::value)
@@ -73,71 +76,44 @@ template<typename T> bool Concat<T>::apply(std::vector<Tensor<T> *> &in)
   }
   m_out.quantizer   = qmin;   // adapt output width to last input
 
-  const Dimensions dim = in[0]->dims();
-  if (dim.size() == 2)
+  // Compute inner (product of dims after axis) and outer (product of dims before axis).
+  int inner = 1;
+  for (int k = axis + 1; k < in[0]->dims().size(); ++k)
+   inner *= m_out.dims()[k];
+  int outer = 1;
+  for (int k = 0; k < axis; ++k) 
+   outer *= m_out.dims()[k];
+  const int out_axis_len = m_out.dims()[axis];
+  // Main loop: per outer-block, append nb_in contiguous chunks along axis in order.
+  for (int o = 0; o < outer; ++o)
   {
-    for (int i = 0; i < dim[0]; ++i)
+    int write_axis_cursor = 0;
+    for (int n = 0; n < nb_in; ++n)
     {
-      int offset = 0;
-      for (int n = 0; n < nb_in; ++n)
+      const int len_a      = in[n]->dims()[axis];
+      const int copy_elems = len_a * inner;
+      const int in_off     = o * copy_elems;
+      const int out_off    = o * (out_axis_len * inner) + write_axis_cursor * inner;
+
+      if (std::is_same<T, float>::value)
       {
-        const Tensor<T> &A = *(in[n]);
-        for (int j = 0; j < A.dims()[1]; ++j, ++offset)
+        // Fast path for float: raw memcpy of a contiguous block.
+        std::memcpy(m_out.data() + out_off, in[n]->data() + in_off, copy_elems * sizeof(T));
+      }
+      else
+      {
+        // Integer path: down-quantize to qmin before storing.
+        const T *src = in[n]->data() + in_off;
+        T *dst       = m_out.data()   + out_off;
+        for (int e = 0; e < copy_elems; ++e)
         {
-          T z = A(i, j);
+          T z = src[e];
           ComputationType<T>::quantize(z, shift[n]);
-          m_out(i, offset) = z;
+          dst[e] = z;
         }
       }
+      write_axis_cursor += len_a;
     }
-  }
-  else if (dim.size() == 3)
-  {
-    for (int i = 0; i < dim[0]; ++i)
-    {
-      for (int j = 0; j < dim[1]; ++j)
-      {
-        int offset = 0;
-        for (int n = 0; n < nb_in; ++n)
-        {
-          const Tensor<T> &A = *(in[n]);
-          for (int k = 0; k < A.dims()[2]; ++k, ++offset)
-          {
-            T z = A(i, j, k);
-            ComputationType<T>::quantize(z, shift[n]);
-            m_out(i, j, offset) = z;
-          }
-        }
-      }
-    }
-  }
-  else if (dim.size() == 4)
-  {
-    for (int i = 0; i < dim[0]; ++i)
-    {
-      for (int j = 0; j < dim[1]; ++j)
-      {
-        for (int k = 0; k < dim[2]; ++k)
-        {
-          int offset = 0;
-          for (int n = 0; n < nb_in; ++n)
-          {
-            const Tensor<T> &A = *(in[n]);
-            for (int l = 0; l < A.dims()[3]; ++l, ++offset)
-            {
-              T z = A(i, j, k, l);
-              ComputationType<T>::quantize(z, shift[n]);
-              m_out(i, j, k, offset) = z;
-            }
-          }
-        }
-      }
-    }
-  }
-  else
-  {
-    // TO DO
-    return false;
   }
   return true;
 }
@@ -145,33 +121,39 @@ template<typename T> bool Concat<T>::apply(std::vector<Tensor<T> *> &in)
 template<typename T> bool Concat<T>::init(const std::vector<Tensor<T> *> &in)
 {
   /*
-  The axis of the concatenation is the third tensor
-  in `in`.
+  The axis of the concatenation can be arbitrary
   */
   if (in.size() < 3)
     return false;
   if (in[0]->dims().size() < 1)
     return false;
-  const int last_axis = in[0]->dims().size() - 1;
-
-  // Currently, the concatenation is along the last axis.
-  int axis_idx = (int) in.size() - 1;
-  if (!((*in[axis_idx]).size() == 1 && ((*in[axis_idx])[0] == last_axis || (*in[axis_idx])[0] == -1)))
+  const int axis_idx = (int) in.size() - 1;
+  if ((*in[axis_idx]).size() != 1)
     return false;
+  int axis = (int)(*in[axis_idx])[0];
+  if (axis < 0) 
+    axis += in[0]->dims().size();
+  if (axis < 0 || axis >= in[0]->dims().size())
+    return false;
+  m_axis = axis;
 
-  // should have same shape
+  // Check shape compatibility on non-axis dims and accumulate axis length.
   int sum_dim = 0;
   for (int i = 1; i < axis_idx; i++)
   {
     if (in[0]->dims().size() != in[i]->dims().size())
       return false;
-    sum_dim += in[i]->dims()[last_axis];
-    for (int k = 0; k < last_axis; ++k)
+    sum_dim += in[i]->dims()[axis];
+    for (int k = 0; k < in[0]->dims().size(); ++k)
+    {
+      if (k == axis) 
+       continue;
       if (in[0]->dims()[k] != in[i]->dims()[k])
         return false;
+    }
   }
   Dimensions dim = in[0]->dims();
-  dim[last_axis] += sum_dim;
+  dim[axis] += sum_dim;
   m_out.resize(dim);
   m_initDone = true;
   return true;
