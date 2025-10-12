@@ -1416,6 +1416,19 @@ def parse_graph_node(
                     additional["raw_data"], additional["dims"] = \
                         transpose_constant_tensor_dim4(additional["raw_data"], additional["dims"], [0, 2, 3, 1])
                         
+                if input_index == 2:  # scales
+                    arr = np.frombuffer(additional["raw_data"], dtype=np.float32)
+                    mapped = []
+                    # map 0.5 to -2, 0.25 to -4 for scales interger implementation
+                    for v in arr.tolist():
+                        if abs(v - 0.5) < 1e-6:
+                            mapped.append(-2)
+                        elif abs(v - 0.25) < 1e-6:
+                            mapped.append(-4)
+                        else:
+                            mapped.append(int(round(float(v))))
+                    additional["raw_data"] = np.asarray(mapped, dtype=np.float32).tobytes()
+                    additional["dtype"] = DTYPE_SADL.FLOAT                        
                 if (
                     additional["raw_data"] == b""
                 ):  # When tensor data is empty, just ignore it.
