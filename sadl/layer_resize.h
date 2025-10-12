@@ -156,7 +156,7 @@ template<typename T> bool Resize<T>::init(const std::vector<Tensor<T> *> &in)
     return false;
   }
 
-  if (scale_N != 1 || scale_H != 2 || scale_W != 2 || scale_C != 1)
+  if (!(scale_N == 1 && ((scale_H == 2 && scale_W == 2) || (scale_H == 4 && scale_W == 4) || (scale_H == -2 && scale_W == -2) || (scale_H == -4 && scale_W == -4) ) && scale_C == 1))
   {
     std::cerr << "[ERROR] invalid scale factor: input: "<<in[0]->dims()<<" scales: "<<*in[1]<<" result=(" << scale_N << ", " << scale_H << ", " << scale_W << ", " << scale_C << ")" << std::endl;
     return false;
@@ -170,8 +170,18 @@ template<typename T> bool Resize<T>::init(const std::vector<Tensor<T> *> &in)
   Dimensions dim;
   dim.resize(4);
   dim[0] = (int)(N * scale_N);
-  dim[1] = (int)(H_in * scale_H);
-  dim[2] = (int)(W_in * scale_W);
+  if (scale_H == -2)
+    dim[1] = (int)(H_in >> 1);   // -2 means downsample by 2
+  else if (scale_H == -4)
+    dim[1] = (int)(H_in >> 2);   // -4 means downsample by 4
+  else
+    dim[1] = (int)(H_in * scale_H);
+  if (scale_W == -2)
+    dim[2] = (int)(W_in >> 1);   // -2 means downsample by 2
+  else if (scale_W == -4)
+    dim[2] = (int)(W_in >> 2);   // -4 means downsample by 4
+  else
+    dim[2] = (int)(W_in * scale_W);
   dim[3] = (int)(C * scale_C);
   m_out.resize(dim);
   m_initDone = true;
@@ -313,16 +323,17 @@ template<typename T> bool Resize<T>::interpolate_nearest(std::vector<Tensor<T> *
 template<> inline void Resize<float>::calc_bicubic_positions(int y, int x, int H, int W, int pos[][2], float ori[]) const
 {
   float &x_ori = ori[0], &y_ori = ori[1], &x_ori_int = ori[2], &y_ori_int = ori[3];
-
+  const float Sx = (scale_factors[2] < 0.f) ? 1.0f / (-scale_factors[2]) : (float)scale_factors[2];
+  const float Sy = (scale_factors[1] < 0.f) ? 1.0f / (-scale_factors[1]) : (float)scale_factors[1];
   if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
   {
-    x_ori = (x + 0.5f) / scale_factors[2] - 0.5f;
-    y_ori = (y + 0.5f) / scale_factors[1] - 0.5f;
+    x_ori = (x + 0.5f) / Sx - 0.5f;
+    y_ori = (y + 0.5f) / Sy - 0.5f;
   }
   else if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_asymmetric)
   {
-    x_ori = x / scale_factors[2];
-    y_ori = y / scale_factors[1];
+    x_ori = x / Sx;
+    y_ori = y / Sy;
   }
   x_ori_int = std::floor(x_ori);
   y_ori_int = std::floor(y_ori);
@@ -343,24 +354,65 @@ template<> inline void Resize<float>::calc_bicubic_positions(int y, int x, int H
 template<typename T> void Resize<T>::calc_bicubic_positions(int y, int x, int H, int W, int pos[][2], T2 ori[]) const
 {
   static_assert(std::is_same<T, int16_t>::value || std::is_same<T, int32_t>::value, "T must be int16_t or int32_t");
-  assert(scale_factors[1] == 2 && scale_factors[2] == 2);
+  const int Sy = (int)scale_factors[1];
+  const int Sx = (int)scale_factors[2];
   int  shift = m_quantizer;
   T2  &x_ori = ori[0], &y_ori = ori[1], &x_ori_int = ori[2], &y_ori_int = ori[3];
-  
-  if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
+  const T2 xQ = (T2)x << shift;
+  const T2 yQ = (T2)y << shift;
+  const T2 half_bias = (T2)1 << (shift - 1);                 // 0.5 in Q
+
+  if ((Sy == 2 && Sx == 2) || (Sy == 4 && Sx == 4))
   {
-    T2 normalize_bias = (T)(1 << (shift - 2));
-    x                 = x << shift;
-    y                 = y << shift;
-    x_ori             = ((x + 1) >> 1) - normalize_bias;
-    y_ori             = ((y + 1) >> 1) - normalize_bias;
+    const int ky = (Sy == 2 ? 1 : 2);
+    const int kx = (Sx == 2 ? 1 : 2);
+    if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
+    {
+      // x_ori_Q = ((xQ + 0.5) >> k) - 0.5
+      x_ori = ((xQ + half_bias) >> kx) - half_bias;
+      y_ori = ((yQ + half_bias) >> ky) - half_bias;
+    }
+    else // asymmetric
+    {
+      // x_ori_Q = round_div_pow2(xQ, k)
+      const T2 rx = (T2)1 << (kx - 1);
+      const T2 ry = (T2)1 << (ky - 1);
+      x_ori = (xQ + rx) >> kx;
+      y_ori = (yQ + ry) >> ky;
+    }
   }
-  else if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_asymmetric)
+  else if (Sy == -2 && Sx == -2)
   {
-    x     = x << shift;
-    y     = y << shift;
-    x_ori = (x + 1) >> 1;
-    y_ori = (y + 1) >> 1;
+    if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
+    {
+      // x_ori_Q = 2*x + 0.5
+      x_ori = (xQ << 1) + half_bias;
+      y_ori = (yQ << 1) + half_bias;
+    }
+    else
+    {
+      x_ori = (xQ << 1);                                     // 2*x
+      y_ori = (yQ << 1);
+    }
+  }
+  else if (Sy == -4 && Sx == -4)
+  {
+    if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
+    {
+      // x_ori_Q = 4*x + 1.5
+      x_ori = (xQ << 2) + (3 << (shift - 1));
+      y_ori = (yQ << 2) + (3 << (shift - 1));
+    }
+    else
+    {
+      x_ori = (xQ << 2);                                     // 4*x
+      y_ori = (yQ << 2);
+    }
+  }
+  else
+  {
+    std::cerr << "[ERROR] invalid scale factor for bicubic: Sy=" << Sy << " Sx=" << Sx << std::endl;
+    return;
   }
   x_ori_int = x_ori >> shift;   // floor
   y_ori_int = y_ori >> shift;
@@ -382,16 +434,18 @@ template<> inline void Resize<float>::calc_positions(int y, int x, int H, int W,
 {
   float &x_ori = ori[0], &y_ori = ori[1], &x_ori_int = ori[2], &y_ori_int = ori[3];
   int   &x_ori_left = pos[0], &y_ori_top = pos[1], &x_ori_right = pos[2], &y_ori_bottom = pos[3];
+  const float Sx = (scale_factors[2] < 0.f) ? 1.0f / (-scale_factors[2]) : (float)scale_factors[2];
+  const float Sy = (scale_factors[1] < 0.f) ? 1.0f / (-scale_factors[1]) : (float)scale_factors[1];
 
   if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
   {
-    x_ori = (x + 0.5f) / scale_factors[2] - 0.5f;
-    y_ori = (y + 0.5f) / scale_factors[1] - 0.5f;
+    x_ori = (x + 0.5f) / Sx - 0.5f;
+    y_ori = (y + 0.5f) / Sy - 0.5f;
   }
   else if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_asymmetric)
   {
-    x_ori = x / scale_factors[2];
-    y_ori = y / scale_factors[1];
+    x_ori = x / Sx;
+    y_ori = y / Sy;
   }
   x_ori_int = std::floor(x_ori);
   y_ori_int = std::floor(y_ori);
@@ -409,25 +463,64 @@ template<> inline void Resize<float>::calc_positions(int y, int x, int H, int W,
 
 template<typename T> void Resize<T>::calc_positions(int y, int x, int H, int W, int pos[], T2 ori[])
 {
-  assert(scale_factors[1] == 2 && scale_factors[2] == 2);
+  int Sy = (int)scale_factors[1];
+  int Sx = (int)scale_factors[2];
   int  shift = m_quantizer;
   T2  &x_ori = ori[0], &y_ori = ori[1], &x_ori_int = ori[2], &y_ori_int = ori[3];
   int &x_ori_left = pos[0], &y_ori_top = pos[1], &x_ori_right = pos[2], &y_ori_bottom = pos[3];
-  
-  if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
+
+  T2 xQ = (T2)x << shift;
+  T2 yQ = (T2)y << shift;
+  T2 half_bias = (T2)1 << (shift - 1);
+  if ((Sy == 2 && Sx == 2) || (Sy == 4 && Sx == 4))
   {
-    T2 normalize_bias = (T)(1 << (shift - 2));
-    x                 = x << shift;
-    y                 = y << shift;
-    x_ori             = ((x + 1) >> 1) - normalize_bias;
-    y_ori             = ((y + 1) >> 1) - normalize_bias;
+    const int ky = (Sy == 2 ? 1 : 2);
+    const int kx = (Sx == 2 ? 1 : 2);
+    if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
+    {
+      // x_ori_Q = ((xQ + 2^(Q-1)) >> k) - 2^(Q-1)
+      x_ori = ((xQ + half_bias) >> kx) - half_bias;
+      y_ori = ((yQ + half_bias) >> ky) - half_bias;
+    }
+    else // asymmetric
+    {
+      // x_ori_Q = (xQ + 2^(k-1)) >> k 
+      T2 rx = (T2)1 << (kx - 1);
+      T2 ry = (T2)1 << (ky - 1);
+      x_ori = (xQ + rx) >> kx;
+      y_ori = (yQ + ry) >> ky;
+    }
   }
-  else if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_asymmetric)
+  else if (Sy == -2 && Sx == -2)   // 0.5×
   {
-    x     = x << shift;
-    y     = y << shift;
-    x_ori = (x + 1) >> 1;
-    y_ori = (y + 1) >> 1;
+    if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
+    {
+      x_ori = (xQ << 1) + half_bias;  // 2x + 0.5
+      y_ori = (yQ << 1) + half_bias;
+    }
+    else
+    {
+      x_ori = (xQ << 1);         // 2x
+      y_ori = (yQ << 1);
+    }
+  }
+  else if (Sy == -4 && Sx == -4)   // 0.25×
+  {
+    if (m_coordinate_transformation_mode == resize_coordinate_transformation_mode_half_pixel)
+    {
+      x_ori = (xQ << 2) + (3 << (shift-1)); // 4x + 1.5 (=3*0.5)
+      y_ori = (yQ << 2) + (3 << (shift-1));
+    }
+    else
+    {
+      x_ori = (xQ << 2);          // 4x
+      y_ori = (yQ << 2);
+    }
+  }
+  else
+  {
+    std::cerr << "[ERROR] invalid scale factor: " << Sy << ", " << Sx << std::endl;
+    return;
   }
   x_ori_int = x_ori >> shift;   // floor
   y_ori_int = y_ori >> shift;
