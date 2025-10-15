@@ -33,6 +33,7 @@
 #pragma once
 #include "layer.h"
 #include "interpolation_utils.h"
+#include <cfenv>
 
 namespace sadl
 {
@@ -95,6 +96,14 @@ template<typename T> bool GridSample<T>::loadInternal(std::istream &file, Versio
   {
     std::cerr << "[ERROR] invalid mode: " << m_mode << std::endl;
     return false;
+  }
+  if ( m_mode == 0)
+  {
+    if (fegetround() != FE_TONEAREST)
+    {
+      std::cerr << "[ERROR] nearest mode requires FE_TONEAREST" << std::endl;
+      return false;
+    }
   }
   if (m_padding_mode != 0 && m_padding_mode != 1)
   {
@@ -341,7 +350,7 @@ template<> inline void GridSample<float>::gs_denormalize(float &x, int length)
       x = (x + 1) * (length - 1) / 2.0f;
     else
       x = ((x + 1) * length - 1) / 2.0f;
-    x = round(x);
+    x = nearbyint(x);
   }
   else if (m_mode == gridsample_mode_bilinear || m_mode == gridsample_mode_bicubic)
   {
@@ -362,7 +371,11 @@ template<typename T> void GridSample<T>::gs_denormalize(T2 &x, int length)
       x               = (x + normalize_bias) * (length - 1);
     else
       x               = (x + normalize_bias) * length - (T)(1 << shift);
-    x                 = (x + normalize_bias) >> (shift + 1);   // round
+    const int frac_bits = shift + 1;
+    const T2  half = T2(1) << shift;
+    const T2  base = x >> frac_bits;
+    const T2  rem  = x - (base << frac_bits);
+    x = (rem < half) ? base : (rem > half ? (base + 1) : ((base & 1) ? (base + 1) : base)); //nearbyint
   }
   else if (m_mode == gridsample_mode_bilinear || m_mode == gridsample_mode_bicubic)
   {
@@ -492,8 +505,8 @@ template<> inline void GridSample<float>::get_bicubic_coeffs(float y_ori, float 
 {
   float x_ori_int = std::floor(x_ori);
   float y_ori_int = std::floor(y_ori);
-  float x_ratio   = (x_ori == x_ori_int) ? 1 : x_ori - x_ori_int;
-  float y_ratio   = (y_ori == y_ori_int) ? 1 : y_ori - y_ori_int;
+  float x_ratio   = (x_ori == x_ori_int) ? 0 : x_ori - x_ori_int;
+  float y_ratio   = (y_ori == y_ori_int) ? 0 : y_ori - y_ori_int;
 
   float wx[4], wy[4];
   for (int i = -1; i <= 2; i++)
@@ -518,8 +531,8 @@ template<typename T> void GridSample<T>::get_bicubic_coeffs(T2 y_ori, T2 x_ori, 
 
   T2 x_ori_int = (x_ori >> shift) << shift;
   T2 y_ori_int = (y_ori >> shift) << shift;
-  T2 x_ratio   = (x_ori == x_ori_int) ? (T)(1 << shift) : x_ori - x_ori_int;
-  T2 y_ratio   = (y_ori == y_ori_int) ? (T)(1 << shift) : y_ori - y_ori_int;
+  T2 x_ratio   = (x_ori == x_ori_int) ? 0 : x_ori - x_ori_int;
+  T2 y_ratio   = (y_ori == y_ori_int) ? 0 : y_ori - y_ori_int;
 
   T2 wx[4], wy[4];
   for (int i = -1; i <= 2; i++)
