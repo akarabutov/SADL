@@ -185,13 +185,13 @@ template<typename T> bool ReduceMean<T>::init(const std::vector<Tensor<T> *> &in
   const int minq=std::max(minAccuracydivQ,maxbitdepth_divq); 
     
   q=std::min(N2,minq+acc_bits-1);      // bitdepth multiplier before division
-  divq = ((1LL << q) + cnt/2) / cnt;   // possible overflow here TBC 
+  divq = static_cast<int>(((1LL << q) + cnt/2) / cnt);   // possible overflow here TBC 
   divq_bits=(int) ceil(log2(divq)); // to transform with int operation
   shift_bits = divq_bits-std::max(N2-(acc_bits+N),0); // for 2 steps
   q2=q-shift_bits;
-  r=(1LL<<q)/2;
-  r_shift= (1LL<<shift_bits)/2;
-  r2=(1LL<<q2)/2;  
+  r=static_cast<int>((1LL<<q)/2);
+  r_shift= static_cast<int>((1LL<<shift_bits)/2);
+  r2=static_cast<int>((1LL<<q2)/2);  
 
   m_initDone = true;
   return true;
