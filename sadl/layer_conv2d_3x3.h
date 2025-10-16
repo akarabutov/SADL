@@ -87,6 +87,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_3x3_s_pee
             }
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -152,6 +153,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_3x3_s_pee
               }
             }
           }
+          COUNTERS_ACC(x);
           ComputationType<T>::quantize(x, shift);
           COUNTERS(x);
           SATURATE(x);
@@ -179,6 +181,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_3x3_s_pee
               }
             }
           }
+          COUNTERS_ACC(x);
           ComputationType<T>::quantize(x, shift);
           COUNTERS(x);
           SATURATE(x);
@@ -210,7 +213,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_3x3_s_pee
               }
             }
           }
-
+          COUNTERS_ACC(x);
           ComputationType<T>::quantize(x, shift);
           COUNTERS(x);
           SATURATE(x);
@@ -237,6 +240,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_3x3_s_pee
               }
             }
           }
+          COUNTERS_ACC(x);
           ComputationType<T>::quantize(x, shift);
           COUNTERS(x);
           SATURATE(x);
@@ -297,6 +301,7 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
             }
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -411,6 +416,7 @@ template<typename T> template<int in_D, int s_h, int s_w,int o_i,int o_j> void C
             }
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);

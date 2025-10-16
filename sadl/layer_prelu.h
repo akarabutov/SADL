@@ -162,6 +162,7 @@ template<typename T> template<bool multialpha> bool PReLU<T>::apply_scalar(std::
                 if (m_out(n_nb, h_nb, w_nb, c_nb) < 0)
                 {
                   typename ComputationType<T>::type z = m_out(n_nb, h_nb, w_nb, c_nb) * alpha;
+                  COUNTERS_ACC(z);
                   ComputationType<T>::quantize(z, alpha_q);
                   COUNTERS(z);
                   COUNTERS_MAC(z);
@@ -193,6 +194,7 @@ template<typename T> template<bool multialpha> bool PReLU<T>::apply_scalar(std::
             if (m_out(n_nb, c_nb) < 0)
             {
               typename ComputationType<T>::type z = m_out(n_nb, c_nb) * alpha;
+              COUNTERS_ACC(z);
               ComputationType<T>::quantize(z, alpha_q);
               COUNTERS(z);
               COUNTERS_MAC(z);
@@ -219,6 +221,7 @@ template<typename T> template<bool multialpha> bool PReLU<T>::apply_scalar(std::
       if (x < 0)
       {
         typename ComputationType<T>::type z = x * alpha;
+        COUNTERS_ACC(z);
         ComputationType<T>::quantize(z, alpha_q);
         COUNTERS(z);
         COUNTERS_MAC(z);

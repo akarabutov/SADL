@@ -90,6 +90,7 @@ template<typename T> bool Where<T>::apply(std::vector<Tensor<T> *> &in)
       const T B_i = (B.dims().size() == 1) ? B[0] : B[i];
       typename ComputationType<T>::type z = condition[i] ? A_i : B_i;
       const int z_q = condition[i] ? A.quantizer : B.quantizer ;
+      COUNTERS_ACC(z);
       ComputationType<T>::shift_left(z, m_out.quantizer - z_q);
       COUNTERS(z);
       m_out[i] = static_cast<T>(z);

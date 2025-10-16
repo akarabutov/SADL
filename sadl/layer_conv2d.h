@@ -525,6 +525,7 @@ template<typename T> void Conv2D<T>::conv2d(const Tensor<T> &A, const Tensor<T> 
             }
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -668,6 +669,7 @@ template<typename T> template<int s_h, int s_w,int o_i, int o_j> bool Conv2D<T>:
         // only keep valid data here
         for (int im_j = im_jv; im_j < max_j; im_j += s_w)
         {
+          COUNTERS_ACC(x[im_j - im_jv]);
           ComputationType<T>::quantize(x[im_j - im_jv], shift);
           COUNTERS(x[im_j - im_jv]);
           SATURATE(x[im_j - im_jv]);

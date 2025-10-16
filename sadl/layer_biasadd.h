@@ -75,6 +75,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
         ComputationType<T>::shift_left(z, -shift);
         //        ComputationType<T>::quantize(z, shift);
         z += *it1;
+        COUNTERS_ACC(z);
         COUNTERS(z);
         SATURATE(z);
         *it0 = static_cast<T> (z);
@@ -94,6 +95,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
           typename ComputationType<T>::type z = x;
           ComputationType<T>::shift_left(z, -shift);
           z += value;
+          COUNTERS_ACC(z);
           COUNTERS(z);
           SATURATE(z);
           x = static_cast<T>(z);
@@ -142,6 +144,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
             typename ComputationType<T>::type z = m_out(n, i);
             ComputationType<T>::shift_left(z, -shift);
             z += B[i];
+            COUNTERS_ACC(z);
             COUNTERS(z);
             SATURATE(z);
             m_out(n, i) = static_cast<T>(z);
@@ -164,6 +167,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
               typename ComputationType<T>::type z = m_out(n, i, j);
               ComputationType<T>::shift_left(z, -shift);
               z += B[j];
+              COUNTERS_ACC(z);
               COUNTERS(z);
               SATURATE(z);
               m_out(n, i, j) = static_cast<T>(z);
@@ -188,6 +192,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
                 typename ComputationType<T>::type z = m_out(n, i, j, k);
                 ComputationType<T>::shift_left(z, -shift);
                 z += B[k];
+                COUNTERS_ACC(z);
                 COUNTERS(z);
                 SATURATE(z);
                 m_out(n, i, j, k) = static_cast<T>(z);
@@ -207,6 +212,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
         typename ComputationType<T>::type z = *it0;
         ComputationType<T>::quantize(z, shift);
         z += *it1;
+        COUNTERS_ACC(z);
         COUNTERS(z);
         SATURATE(z);
         *it0 = static_cast<T>(z);
@@ -226,6 +232,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
           typename ComputationType<T>::type z = x;
           ComputationType<T>::quantize(z, shift);
           z += value;
+          COUNTERS_ACC(z);
           COUNTERS(z);
           SATURATE(z);
           x = static_cast<T>(z);
@@ -273,6 +280,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
             typename ComputationType<T>::type z = m_out(n, i);
             ComputationType<T>::quantize(z, shift);
             z += B[i];
+            COUNTERS_ACC(z);
             COUNTERS(z);
             SATURATE(z);
             m_out(n, i) = static_cast<T>(z);
@@ -295,6 +303,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
               typename ComputationType<T>::type z = m_out(n, i, j);
               ComputationType<T>::quantize(z, shift);
               z += B[j];
+              COUNTERS_ACC(z);
               COUNTERS(z);
               SATURATE(z);
               m_out(n, i, j) = static_cast<T>(z);
@@ -319,6 +328,7 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
                 typename ComputationType<T>::type z = m_out(n, i, j, k);
                 ComputationType<T>::quantize(z, shift);
                 z += B[k];
+                COUNTERS_ACC(z);
                 COUNTERS(z);
                 SATURATE(z);
                 m_out(n, i, j, k) = static_cast<T>(z);

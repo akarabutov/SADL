@@ -128,6 +128,7 @@ public:
   int64_t cpt_mac_nz   = 0;
   int64_t cpt_mac      = 0;
   int64_t cpt_overflow = 0;
+  int64_t cpt_overflow_acc = 0;
 #endif
 protected:
   bool                      loadPrefix(std::istream &file, Version v);

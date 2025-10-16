@@ -94,6 +94,7 @@ public:
   struct Stat
   {
     uint64_t overflow = 0;
+    uint64_t overflow_acc = 0;
     uint64_t op       = 0;
     uint64_t mac      = 0;
     uint64_t mac_nz   = 0;
@@ -772,13 +773,15 @@ template<typename T> typename Model<T>::Stat Model<T>::printOverflow(bool printi
   for (int layer_cnt = 0; layer_cnt < (int) m_data.size(); ++layer_cnt)
   {
     stat.overflow += m_data[layer_cnt].layer->cpt_overflow;
+    stat.overflow_acc += m_data[layer_cnt].layer->cpt_overflow_acc;
     stat.op += m_data[layer_cnt].layer->cpt_op;
     stat.mac += m_data[layer_cnt].layer->cpt_mac;
     stat.mac_nz += m_data[layer_cnt].layer->cpt_mac_nz;
-    if (m_data[layer_cnt].layer->cpt_overflow > 0)
+    if (m_data[layer_cnt].layer->cpt_overflow > 0 || m_data[layer_cnt].layer->cpt_overflow_acc > 0)
     {
       std::cout << "[WARN] layer " << m_data[layer_cnt].layer->id() << ' ' << m_data[layer_cnt].layer->name() << " [" << opName(m_data[layer_cnt].layer->op())
-                << "]: overflow: " << m_data[layer_cnt].layer->cpt_overflow << '/' << m_data[layer_cnt].layer->cpt_op << " ("
+                << "]: overflow: " << m_data[layer_cnt].layer->cpt_overflow << '/' << m_data[layer_cnt].layer->cpt_op << " "
+                << ", overflow_acc: " << m_data[layer_cnt].layer->cpt_overflow_acc << '/' << m_data[layer_cnt].layer->cpt_op << " ("
                 << m_data[layer_cnt].layer->cpt_overflow * 100. / m_data[layer_cnt].layer->cpt_op << "%)" << std::endl;
     }
     else {
@@ -806,6 +809,7 @@ template<typename T> void Model<T>::resetCounters()
     if (m_data[layer_cnt].layer->op() == layers::OperationType::Placeholder)
       continue;
     m_data[layer_cnt].layer->cpt_overflow = 0;
+    m_data[layer_cnt].layer->cpt_overflow_acc = 0;
     m_data[layer_cnt].layer->cpt_op       = 0;
     m_data[layer_cnt].layer->cpt_mac      = 0;
     m_data[layer_cnt].layer->cpt_mac_nz   = 0;

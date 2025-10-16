@@ -112,8 +112,10 @@ template<typename T> bool AveragePool<T>::apply(std::vector<Tensor<T> *> &in)
             // average
             if constexpr (std::is_same<T,float>::value)
               num /= cnt;
-            else
+            else {
+              COUNTERS_ACC(num*divq);
               num = (num * divq) >> q;
+            }
             COUNTERS(num);
             SATURATE(num);
             m_out(im_nb, im_i, im_j, im_d) = static_cast<T>(num);

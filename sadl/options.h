@@ -72,10 +72,13 @@ static constexpr float kSparsifySizeThreshold = 1000.0f;
 
 #if DEBUG_COUNTERS
 template<typename T> T my_abs(T x) { return x < T{} ? -x : x; }
-#define COUNTERS(X)                                                                                                                                            \
-  ++this->cpt_op;                                                                                                                                              \
-  if (my_abs(X) > ComputationType<T>::max)                                                                                                                     \
-  ++this->cpt_overflow
+#define COUNTERS(X)   \
+  ++this->cpt_op;     \
+  if (my_abs(X) >= ComputationType<T>::max)  \
+      ++this->cpt_overflow
+#define COUNTERS_ACC(X)    \
+  if (my_abs(X) >= ComputationType<int32_t>::max)   \
+      ++this->cpt_overflow_acc
 #define COUNTERS_MAC(X)                                                                                                                                        \
   ++this->cpt_mac;                                                                                                                                             \
   if (X != 0)                                                                                                                                                  \
@@ -84,7 +87,8 @@ template<typename T> T my_abs(T x) { return x < T{} ? -x : x; }
 #else
 #define COUNTERS(X) (void) X
 #define COUNTERS_MAC(X) (void) X
-#define COUNTERS_MAC_NOP(X) (void) (X)  
+#define COUNTERS_MAC_NOP(X) (void) (X)
+#define COUNTERS_ACC(X) (void) (X)  
 #endif
 
 #ifndef DUMP_MODEL_EXT

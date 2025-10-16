@@ -391,6 +391,7 @@ template<typename T> void Conv2DTranspose<T>::conv2dtranspose(int nb_filters, in
       for (int filter = 0; filter < nb_filters; ++filter)
       {
         auto x = m_tempo(im_nb, im_i + half_size, im_j + half_size, filter);
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -455,6 +456,7 @@ template<typename T> void Conv2DTranspose<T>::conv2dtranspose_2x2(int nb_filters
       for (int im_j = 0; im_j < out_w; ++im_j)
       {
         auto x = m_tempo(im_nb, im_i, im_j, filter);
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
