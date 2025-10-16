@@ -193,6 +193,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_2x2_s(con
             }
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -259,6 +260,7 @@ template<typename T> template<int in_D, int s_h, int s_w> void Conv2D<T>::conv2d
             }
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);

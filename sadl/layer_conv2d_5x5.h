@@ -95,6 +95,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_5x5_s(con
             }
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);

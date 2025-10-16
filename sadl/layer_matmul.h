@@ -322,6 +322,7 @@ template<typename T> template<int NN> bool MatMul<T>::apply_dim2(std::vector<Ten
             COUNTERS_MAC(bptr[i]);
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -345,6 +346,7 @@ template<typename T> template<int NN> bool MatMul<T>::apply_dim2(std::vector<Ten
             COUNTERS_MAC(bptr[i]);
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -390,6 +392,7 @@ template<typename T> template<int NN> bool MatMul<T>::apply_dim3(std::vector<Ten
               COUNTERS_MAC(B(b, j, t));
             }
           }
+          COUNTERS_ACC(x);
           ComputationType<T>::quantize(x, shift);
           COUNTERS(x);
           SATURATE(x);
@@ -414,6 +417,7 @@ template<typename T> template<int NN> bool MatMul<T>::apply_dim3(std::vector<Ten
               COUNTERS_MAC(B(b, j, t));
             }
           }
+          COUNTERS_ACC(x);
           ComputationType<T>::quantize(x, shift);
           COUNTERS(x);
           SATURATE(x);
@@ -458,6 +462,7 @@ template<typename T> template<int NN> bool MatMul<T>::apply_dim4(std::vector<Ten
             COUNTERS_MAC(B(0, b, j, t));
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -502,7 +507,7 @@ template<typename T> bool MatMul<T>::apply_sparse_matmul(std::vector<Tensor<T> *
           x += (typename ComputationType<T>::type) aptr[j] * B.getDataSparse()[offset_data];
           COUNTERS_MAC(B.getDataSparse()[offset_data]);
         }
-
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -527,7 +532,7 @@ template<typename T> bool MatMul<T>::apply_sparse_matmul(std::vector<Tensor<T> *
           x += (typename ComputationType<T>::type) aptr[j] * B.getDataSparse()[offset_data];
           COUNTERS_MAC(B.getDataSparse()[offset_data]);
         }
-
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -579,7 +584,7 @@ template<typename T> bool MatMul<T>::apply_sparse_pack_matmul(std::vector<Tensor
           COUNTERS_MAC(B.getDataSparse()[offset_data+p]);
         }
       }
-
+      COUNTERS_ACC(x);
       ComputationType<T>::quantize(x, shift);
       COUNTERS(x);
       SATURATE(x);

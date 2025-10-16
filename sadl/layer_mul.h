@@ -186,6 +186,7 @@ template<typename T> template<int NN> bool Mul<T>::apply_same_dim(std::vector<Te
     typename ComputationType<T>::type x = m_out[k];
     x *= B[k];
     COUNTERS_MAC(B[k]);
+    COUNTERS_ACC(x);
     ComputationType<T>::quantize(x, shift);
     COUNTERS(x);
     SATURATE(x);
@@ -208,6 +209,7 @@ template<typename T> template<int NN> bool Mul<T>::apply_singleton(std::vector<T
     typename ComputationType<T>::type x = m_out[k];
     x *= value;
     COUNTERS_MAC(value);
+    COUNTERS_ACC(x);
     ComputationType<T>::quantize(x, shift);
     COUNTERS(x);
     SATURATE(x);
@@ -233,6 +235,7 @@ template<typename T> template<int NN> bool Mul<T>::apply_dim2(std::vector<Tensor
       typename ComputationType<T>::type x = m_out(n, i);
       x *= B[i];
       COUNTERS_MAC(B[i]);
+      COUNTERS_ACC(x);
       ComputationType<T>::quantize(x, shift);
       COUNTERS(x);
       SATURATE(x);
@@ -260,6 +263,7 @@ template<typename T> template<int NN> bool Mul<T>::apply_dim3(std::vector<Tensor
         typename ComputationType<T>::type x = m_out(n, i, j);
         x *= B[j];
         COUNTERS_MAC(B[j]);
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -290,6 +294,7 @@ template<typename T> template<int NN> bool Mul<T>::apply_dim4(std::vector<Tensor
           typename ComputationType<T>::type x = m_out(n, i, j, k);
           x *= B[k];
           COUNTERS_MAC(B[k]);
+          COUNTERS_ACC(x);
           ComputationType<T>::quantize(x, shift);
           COUNTERS(x);
           SATURATE(x);

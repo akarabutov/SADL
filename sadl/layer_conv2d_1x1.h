@@ -176,6 +176,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_1x1_s(con
             COUNTERS_MAC(kernel(0, 0, filter_nb, filter_d));
           }
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
@@ -225,6 +226,7 @@ template<typename T> template<int in_D, int s_h, int s_w> void Conv2D<T>::conv2d
           x += (typename ComputationType<T>::type) A(im_nb, im_i, im_j, filter_d) * kernel(0, 0, filter_nb, filter_d);
           COUNTERS_MAC(kernel(0, 0, filter_nb, filter_d));
         }
+        COUNTERS_ACC(x);
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);

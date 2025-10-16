@@ -83,6 +83,7 @@ template<typename T> bool ReduceMean<T>::apply(std::vector<Tensor<T> *> &in)
 
           T2 num = A(im_nb, im_i, im_j, im_d);
           num += result(ni, hi, wi, ci);
+          COUNTERS_ACC(num);
           COUNTERS(num);
           result(ni, hi, wi, ci) = num;
         }
@@ -116,6 +117,7 @@ template<typename T> bool ReduceMean<T>::apply(std::vector<Tensor<T> *> &in)
               T2 num = result(im_nb, im_i, im_j, im_d);
               num = (num * divq + r) >> q;
               COUNTERS(num);
+              COUNTERS_ACC(num*divq+r);
               SATURATE(num);
               m_out(im_nb, im_i, im_j, im_d) = static_cast<T>(num);
             }
@@ -130,8 +132,9 @@ template<typename T> bool ReduceMean<T>::apply(std::vector<Tensor<T> *> &in)
           for (int im_j = 0; im_j < result.dims()[2]; ++im_j) {
             for (int im_d = 0; im_d < result.dims()[3]; ++im_d) {
               T2 num = result(im_nb, im_i, im_j, im_d); // give room for divq
-              T2 temp = (num + r_shift) >> shift_bits;
+              T2 temp = (num + r_shift) >> shift_bits;         
               num = (temp * divq + r2) >> q2;
+              COUNTERS_ACC(temp*divq+r2); 
               COUNTERS(num);
               SATURATE(num);
               m_out(im_nb, im_i, im_j, im_d) = static_cast<T>(num);
