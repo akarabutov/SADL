@@ -252,6 +252,231 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_3x3_s_pee
   }   // filter_nb
 }
 
+template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_3x3_s_g2_peel(const Tensor<T> &A, const Tensor<T> &kernel)
+{
+  constexpr int im_nb      = 0;
+  const int     shift      = kernel.quantizer + m_q;
+  constexpr int ihalf_size = 1;
+  const int     in_H{ A.dims()[1] };
+  const int     in_W{ A.dims()[2] };
+  const int     nb_filters{ kernel.dims()[2] };
+  constexpr int half_size_h{ ihalf_size };
+  constexpr int half_size_w{ ihalf_size };
+  const int     top{ m_pads[0] };
+  const int     left{ m_pads[1] };
+  const int     start_h{ half_size_h - top };
+  const int     start_w{ half_size_w - left };
+  const int     in_D{ A.dims()[3] };
+  
+  constexpr int groups = 2;
+  const int in_D_per_group = in_D / groups;
+  const int nb_filters_per_group = nb_filters / groups;
+
+#if DEBUG_PATH
+  std::cout << __PRETTY_FUNCTION__ << std::endl;
+  std::cout << "Using groups=2, input channels per group: " << in_D_per_group 
+            << ", output channels per group: " << nb_filters_per_group << std::endl;
+#endif
+
+  for (int filter_nb = 0; filter_nb < nb_filters; ++filter_nb)
+  {
+    const int group = filter_nb / nb_filters_per_group;
+    const int in_d_offset = group * in_D_per_group;
+    {
+      int  im_i;
+      int  im_j;
+      auto loop_with_cond = [&, filter_nb, shift, group, in_d_offset](int i0, int i1, int j0, int j1)
+      {
+        typename ComputationType<T>::type x = 0;
+        for (int filter_i = i0; filter_i <= i1; ++filter_i)
+        {
+          for (int filter_j = j0; filter_j <= j1; ++filter_j)
+          {
+            for (int filter_d = 0; filter_d < in_D_per_group; ++filter_d)
+            {
+              const int actual_d = in_d_offset + filter_d; 
+              int ii = im_i + filter_i;
+              int jj = im_j + filter_j;
+              int ki = ihalf_size + filter_i;
+              int kj = ihalf_size + filter_j;
+
+              x += (typename ComputationType<T>::type) A(im_nb, ii, jj, actual_d) 
+                   * kernel(ki, kj, filter_nb, filter_d);
+              COUNTERS_MAC(kernel(ki, kj, filter_nb, filter_d));
+            }
+          }
+        }
+        ComputationType<T>::quantize(x, shift);
+        COUNTERS(x);
+        SATURATE(x);
+        COUNTERS_MAC_NOP(in_D_per_group*(3*3-(i1-i0+1)*(j1-j0+1)));
+        m_out(im_nb, im_i / s_h, im_j / s_w, filter_nb) = static_cast<T>(x);
+      };
+
+      im_j = start_w;
+      if (im_j < in_W)
+      {   // left side
+        im_i = start_h;
+        if (im_i < in_H)
+        {   // top left corner
+          loop_with_cond(-start_h, ihalf_size, -start_w, ihalf_size);
+        }
+        im_i = ((in_H - ihalf_size - start_h) / s_h) * s_h + start_h;
+        if (im_i > 0 && im_i < in_H && im_i != start_h)
+        {   // bottom left corner
+          const int end_i = (im_i + 1 < in_H) ? 1 : 0;
+          loop_with_cond(-ihalf_size, end_i, -start_w, ihalf_size);
+        }
+      }
+
+      im_j            = ((in_W - ihalf_size - start_w) / s_w) * s_w + start_w;
+      const int end_j = (im_j + 1 < in_W) ? 1 : 0;
+      if (im_j > 0 && im_j < in_W && im_j != start_w)
+      {   // right side
+        im_i = start_h;
+        if (im_i < in_H)
+        {   // top right corner
+          loop_with_cond(-start_h, ihalf_size, -ihalf_size, end_j);
+        }
+
+        im_i = ((in_H - ihalf_size - start_h) / s_h) * s_h + start_h;
+        if (im_i > 0 && im_i < in_H && im_i != start_h)
+        {   // bottom right corner
+          const int end_i = (im_i + 1 < in_H) ? 1 : 0;
+          loop_with_cond(-ihalf_size, end_i, -ihalf_size, end_j);
+        }
+      }
+    }
+
+    // vertical borders
+    {
+      for (int im_i = start_h + s_h; im_i < in_H - ihalf_size; im_i += s_h)
+      {
+        int im_j = start_w;   // can be only 0 or 1
+        if (im_j < in_W)
+        {   // left side
+          typename ComputationType<T>::type x = 0;
+          for (int filter_i = -ihalf_size; filter_i <= ihalf_size; ++filter_i)
+          {
+            for (int filter_j = -start_w; filter_j <= ihalf_size; ++filter_j)
+            {
+              for (int filter_d = 0; filter_d < in_D_per_group; ++filter_d)
+              {
+                const int actual_d = in_d_offset + filter_d;
+                int ii = im_i + filter_i;
+                int jj = im_j + filter_j;
+                int ki = ihalf_size + filter_i;
+                int kj = ihalf_size + filter_j;
+                x += (typename ComputationType<T>::type) A(im_nb, ii, jj, actual_d) 
+                     * kernel(ki, kj, filter_nb, filter_d);
+                COUNTERS_MAC(kernel(ki, kj, filter_nb, filter_d));
+              }
+            }
+          }
+          ComputationType<T>::quantize(x, shift);
+          COUNTERS(x);
+          SATURATE(x);
+          COUNTERS_MAC_NOP(in_D_per_group*(3*3-3*(ihalf_size+start_w+1)));
+          m_out(im_nb, im_i / s_h, im_j / s_w, filter_nb) = static_cast<T>(x);
+        }
+
+        im_j = ((in_W - ihalf_size - start_w) / s_w) * s_w + start_w;
+        if (im_j > 0 && im_j < in_W && im_j != start_w)
+        {   // right side
+          typename ComputationType<T>::type x          = 0;
+          const int                         end_filter = (im_j + 1) < in_W ? 1 : 0;
+          for (int filter_i = -ihalf_size; filter_i <= ihalf_size; ++filter_i)
+          {
+            for (int filter_j = -ihalf_size; filter_j <= end_filter; ++filter_j)
+            {
+              for (int filter_d = 0; filter_d < in_D_per_group; ++filter_d)
+              {
+                const int actual_d = in_d_offset + filter_d;
+                int ii = im_i + filter_i;
+                int jj = im_j + filter_j;
+                int ki = ihalf_size + filter_i;
+                int kj = ihalf_size + filter_j;
+                x += (typename ComputationType<T>::type) A(im_nb, ii, jj, actual_d) 
+                     * kernel(ki, kj, filter_nb, filter_d);
+                COUNTERS_MAC(kernel(ki, kj, filter_nb, filter_d));
+              }
+            }
+          }
+          ComputationType<T>::quantize(x, shift);
+          COUNTERS(x);
+          SATURATE(x);
+          COUNTERS_MAC_NOP(in_D_per_group*(3*3-3*(end_filter+ihalf_size+1)));
+          m_out(im_nb, im_i / s_h, im_j / s_w, filter_nb) = static_cast<T>(x);
+        }
+      }
+    }
+    {
+      // horizontal borders
+      for (int im_j = s_w + start_w; im_j < in_W - ihalf_size; im_j += s_w)
+      {
+        int im_i = start_h;   // 0 or 1 -> adapt filter start
+        if (im_i < in_H)
+        {   // top line
+          typename ComputationType<T>::type x = 0;
+          for (int filter_i = -start_h; filter_i <= ihalf_size; ++filter_i)
+          {
+            for (int filter_j = -ihalf_size; filter_j <= ihalf_size; ++filter_j)
+            {
+              for (int filter_d = 0; filter_d < in_D_per_group; ++filter_d)
+              {
+                const int actual_d = in_d_offset + filter_d;
+                int ii = im_i + filter_i;
+                int jj = im_j + filter_j;
+                int ki = ihalf_size + filter_i;
+                int kj = ihalf_size + filter_j;
+                x += (typename ComputationType<T>::type) A(im_nb, ii, jj, actual_d) 
+                     * kernel(ki, kj, filter_nb, filter_d);
+                COUNTERS_MAC(kernel(ki, kj, filter_nb, filter_d));
+              }
+            }
+          }
+
+          ComputationType<T>::quantize(x, shift);
+          COUNTERS(x);
+          SATURATE(x);
+          COUNTERS_MAC_NOP(in_D_per_group*(3*3-3*(ihalf_size+start_h+1)));
+          m_out(im_nb, im_i / s_h, im_j / s_w, filter_nb) = static_cast<T>(x);
+        }
+        im_i = ((in_H - ihalf_size - start_h) / s_h) * s_h + start_h;
+        if (im_i > 0 && im_i < in_H && im_i != start_h)
+        {   // bottom line
+          typename ComputationType<T>::type x          = 0;
+          const int                         end_filter = (im_i + 1) < in_H ? 1 : 0;
+          for (int filter_i = -ihalf_size; filter_i <= end_filter; ++filter_i)
+          {
+            for (int filter_j = -ihalf_size; filter_j <= ihalf_size; ++filter_j)
+            {
+              for (int filter_d = 0; filter_d < in_D_per_group; ++filter_d)
+              {
+                const int actual_d = in_d_offset + filter_d;
+                int ii = im_i + filter_i;
+                int jj = im_j + filter_j;
+                int ki = ihalf_size + filter_i;
+                int kj = ihalf_size + filter_j;
+                x += (typename ComputationType<T>::type) A(im_nb, ii, jj, actual_d) 
+                     * kernel(ki, kj, filter_nb, filter_d);
+                COUNTERS_MAC(kernel(ki, kj, filter_nb, filter_d));
+              }
+            }
+          }
+          ComputationType<T>::quantize(x, shift);
+          COUNTERS(x);
+          SATURATE(x);
+          COUNTERS_MAC_NOP(in_D_per_group*(3*3-3*(end_filter+ihalf_size+1)));
+          m_out(im_nb, im_i / s_h, im_j / s_w, filter_nb) = static_cast<T>(x);
+        }
+      }
+    }
+  }   // filter_nb
+}
+
+
+
 template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::conv2d_3x3_s_g1_core(const Tensor<T> &A, const Tensor<T> &kernel)
 {
 
@@ -374,6 +599,33 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
 #undef CONV_MOD32
 }
 
+template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::conv2d_3x3_s_g2_core_dispatch(const Tensor<T> &A, const Tensor<T> &kernel)
+{
+#if __AVX2__
+#define CONV_MOD16_IN16_OUT16_G2 simd16_conv2d_3x3_in16_out16_s_g2_d
+#define CONV_MOD16_IN4_OUT8_G2 simd16_conv2d_3x3_in4_out8_s_g2_d
+  const int in_D{ A.dims()[3] };
+
+  switch (in_D)
+  {
+  case 16:
+  CONV_MOD16_IN16_OUT16_G2<16, s_h, s_w, o_i, o_j>(A, kernel);
+    break;
+  case 4:
+  CONV_MOD16_IN4_OUT8_G2<4, s_h, s_w, o_i, o_j>(A, kernel);
+    break;
+  default:
+    std::cout << "Error: Groups = 2 only for in_D = 16 or 4" << std::endl;
+    exit(-1);
+    break;
+  }
+#undef CONV_MOD8
+#undef CONV_MOD16
+#undef CONV_MOD32
+#endif
+}
+
+
 template<typename T> template<int in_D, int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::conv2d_3x3_s_g1_d_core(const Tensor<T> &A, const Tensor<T> &kernel)
 {
   constexpr int im_nb     = 0;
@@ -431,6 +683,155 @@ template<typename T> template<int in_D, int s_h, int s_w,int o_i,int o_j> void C
 // ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///
 #if __AVX2__
+template<> template<int in_D, int s_h, int s_w, int o_i, int o_j>
+void Conv2D<int16_t>::simd16_conv2d_3x3_in16_out16_s_g2_d(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
+{
+  using T = int16_t;
+  static_assert(in_D % 16 == 0, "Should be used with mod16 filters per group for int16_t.");
+  constexpr int groups = 2;
+  constexpr int im_nb = 0;
+  constexpr int half_size = 1;
+  const int shift = kernel.quantizer + m_q;
+  const int total_nb_filters = kernel.dims()[2];
+  const int nb_filters_per_group = total_nb_filters / groups; 
+  const int in_H = A.dims()[1];
+  const int in_W = A.dims()[2];
+
+  constexpr int ihalf_size = 1;
+  constexpr int start_h = ihalf_size;
+  constexpr int start_w = ihalf_size;
+
+#if DEBUG_SIMD && __AVX512F__
+  std::cout << "\n[INFO] SIMD16 (int16_t) conv 3x3 with groups=2, inD=" << in_D 
+            << " outD=" << total_nb_filters << " s=[" << s_w << ' ' << s_h << "]  " << in_H << 'x'
+            << in_W << " " << in_D * kernel.dims()[0] * kernel.dims()[1] * total_nb_filters 
+            * (in_H / s_h) * (in_W / s_w) / 1000 << " kMAC" << std::endl;
+#endif
+#if DEBUG_PATH
+  std::cout << __PRETTY_FUNCTION__ << std::endl;
+#endif
+
+  for (int im_i = start_h + s_h/2; im_i < in_H - start_h; im_i += s_h)
+  {
+    for (int im_j = start_w + s_w/2; im_j < in_W - start_w; im_j += s_w)
+    {
+        for (int filter = 0; filter < nb_filters_per_group; ++filter)
+        {
+          __m256i sum = _mm256_setzero_si256(); 
+          
+          for (int filter_i = -half_size; filter_i <= half_size; ++filter_i)
+          {
+            for (int filter_j = -half_size; filter_j <= half_size; ++filter_j)
+            {
+              const int ii = im_i + filter_i;
+              const int jj = im_j + filter_j;
+              const int ki = half_size + filter_i;
+              const int kj = half_size + filter_j;
+              
+              const __m128i *kptr_g1 = (const __m128i *) kernel.addr(ki, kj, filter, 0);
+              const __m128i  kernel_vec_g1   = _mm_load_si128(kptr_g1);   // or loadu ?
+
+              const __m128i *kptr_g2 = (const __m128i *) kernel.addr(ki, kj, filter + nb_filters_per_group, 0);
+              const __m128i  kernel_vec_g2   = _mm_load_si128(kptr_g2);   // or loadu ?
+              
+              const __m256i kernel_vec = _mm256_set_m128i(kernel_vec_g2, kernel_vec_g1);
+              const __m256i *aptr = (const __m256i *) A.addr(im_nb, ii, jj, 0);
+              const __m256i input_vec = _mm256_loadu_si256(aptr);
+              
+              const __m256i product = _mm256_madd_epi16(kernel_vec, input_vec);
+              sum = _mm256_add_epi32(sum, product);
+              
+            }
+          }
+          
+          __m256i sum_ = _mm256_hadd_epi32(sum, sum);
+          sum_ = _mm256_hadd_epi32(sum_, sum_);
+          int32_t temp[8];
+          _mm256_storeu_si256((__m256i*)temp, sum_);
+          typename ComputationType<T>::type z1 = (temp[0] >> shift) ;
+          typename ComputationType<T>::type z2 = (temp[4] >> shift) ;
+
+          SATURATE(z1);
+          SATURATE(z2); 
+
+          m_out(im_nb, (im_i - o_i) / s_h, (im_j - o_j) / s_w, filter) = static_cast<int16_t>(z1);
+          m_out(im_nb, (im_i - o_i) / s_h, (im_j - o_j) / s_w, filter+nb_filters_per_group) = static_cast<int16_t>(z2);
+        }
+    }
+  }
+}
+
+template<> template<int in_D, int s_h, int s_w, int o_i, int o_j>
+void Conv2D<int16_t>::simd16_conv2d_3x3_in4_out8_s_g2_d(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
+{
+  using T = int16_t;
+  constexpr int im_nb = 0;
+  constexpr int half_size = 1;
+  const int shift = kernel.quantizer + m_q;
+  const int in_H = A.dims()[1];
+  const int in_W = A.dims()[2];
+
+  constexpr int ihalf_size = 1;
+  constexpr int start_h = ihalf_size;
+  constexpr int start_w = ihalf_size;
+
+#if DEBUG_SIMD && __AVX512F__
+  std::cout << "\n[INFO] SIMD16 (int16_t) conv 3x3 with groups=2, inD=" << in_D 
+            << " outD=" << total_nb_filters << " s=[" << s_w << ' ' << s_h << "]  " << in_H << 'x'
+            << in_W << " " << in_D * kernel.dims()[0] * kernel.dims()[1] * total_nb_filters 
+            * (in_H / s_h) * (in_W / s_w) / 1000 << " kMAC" << std::endl;
+#endif
+#if DEBUG_PATH
+  std::cout << __PRETTY_FUNCTION__ << std::endl;
+#endif
+
+  for (int im_i = start_h + s_h/2; im_i < in_H - start_h; im_i += s_h)
+  {
+    for (int im_j = start_w + s_w/2; im_j < in_W - start_w; im_j += s_w)
+    {
+        for (int filter = 0; filter < 1; ++filter)
+        {
+          __m256i sum = _mm256_setzero_si256(); 
+          
+          for (int filter_i = -half_size; filter_i <= half_size; ++filter_i)
+          {
+            for (int filter_j = -half_size; filter_j <= half_size; ++filter_j)
+            {
+              const int ii = im_i + filter_i;
+              const int jj = im_j + filter_j;
+              const int ki = half_size + filter_i;
+              const int kj = half_size + filter_j;
+              
+              const __m256i *kptr_ = (const __m256i *) kernel.addr(ki, kj, filter, 0);
+              const __m256i  kernel_vec_   = _mm256_loadu_si256(kptr_);   // or loadu ?
+
+              const __m128i *aptr = (const __m128i *) A.addr(im_nb, ii, jj, 0);
+              const __m128i input_vec_region = _mm_loadu_si128(aptr);
+              const __m128i input_vec_1 = _mm_shuffle_epi32(input_vec_region, 0x00);
+              const __m128i input_vec_2 = _mm_shuffle_epi32(input_vec_region, 0x55);
+              const __m256i input_vec = _mm256_set_m128i(input_vec_2, input_vec_1);
+
+              const __m256i product = _mm256_madd_epi16(kernel_vec_, input_vec);
+
+              sum = _mm256_add_epi32(sum, product);
+            }
+          }
+          
+          int32_t temp[8];
+          _mm256_storeu_si256((__m256i*)temp, sum);
+          typename ComputationType<T>::type z;
+          for (int k = 0; k < 8; ++k)
+          {
+            z = (temp[k] >> shift) ;
+            SATURATE(z);
+            m_out(im_nb, (im_i - o_i) / s_h, (im_j - o_j) / s_w, k) = z;
+          }
+
+        }
+    }
+  }
+}
+
 template<> template<int in_D, int s_h, int s_w,int o_i,int o_j> void Conv2D<float>::simd8_conv2d_3x3_s_g1_d(const Tensor<float> &A, const Tensor<float> &kernel)
 {
   static_assert(in_D % 8 == 0, "Should be used with mod8 filters.");

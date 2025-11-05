@@ -88,7 +88,10 @@ protected:
 
   // 3x3
   template<int s_h, int s_w> void conv2d_3x3_s_peel(const Tensor<T> &A, const Tensor<T> &kernel);
+  template<int s_h, int s_w> void conv2d_3x3_s_g2_peel(const Tensor<T> &A, const Tensor<T> &kernel);
+
   template<int s_h, int s_w,int o_i,int o_j> void conv2d_3x3_s_g1_core_dispatch(const Tensor<T> &A, const Tensor<T> &kernel);
+  template<int s_h, int s_w,int o_i,int o_j> void conv2d_3x3_s_g2_core_dispatch(const Tensor<T> &A, const Tensor<T> &kernel);
 
   template<int s_h, int s_w,int o_i,int o_j> void conv2d_3x3_s_g1_core(const Tensor<T> &A, const Tensor<T> &kernel);
 
@@ -139,6 +142,19 @@ protected:
   template<int in_D, int s_h, int s_w> void simd32_conv2d_1x1_s_d(const Tensor<T> &A, const Tensor<T> &kernel)
   {
     simd16_conv2d_1x1_s_d<in_D, s_h, s_w>(A, kernel);
+  }
+
+  template<int in_D, int s_h, int s_w, int o_i, int o_j> void simd16_conv2d_3x3_in16_out16_s_g2_d(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    std::cout << "[WARNING] generic conv2d for debug" << std::endl;
+    assert(false);
+    exit(-1);
+  }
+  template<int in_D, int s_h, int s_w, int o_i, int o_j> void simd16_conv2d_3x3_in4_out8_s_g2_d(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    std::cout << "[WARNING] generic conv2d for debug" << std::endl;
+    assert(false);
+    exit(-1);
   }
 
   template<int in_D, int s_h, int s_w,int o_i,int o_j> void simd8_conv2d_3x3_s_g1_d(const Tensor<T> & /*A*/, const Tensor<T> & /*kernel*/)
@@ -253,7 +269,8 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
   assert(A.dims()[2] > 1);
 
 
-  if (m_groups == 1) // function only optimized for group=1
+  // if (m_groups == 1 || (m_groups== 2 && A.dims()[3] == 16)) // function only optimized for group=1
+  if (m_groups == 1) // function only optimized for group=1 or group=2 with inD=16 (int16) or inD=8 (int8)
   {
       if (k_size_h == 1 && k_size_w == 1)   // 1x1
       {
@@ -261,7 +278,7 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
           return true;
       }
 
-      else if (k_size_h == 3 && k_size_w == 3)   // 3x3
+      else if (k_size_h == 3 && k_size_w == 3 && m_groups == 1)   // 3x3
       {
           if (m_pads[0] != 0 || m_pads[1] != 0)
           {
@@ -278,6 +295,26 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
           }
       }
   }
+#if __AVX2__
+  else if(m_groups== 2 && std::is_same<T,int16_t>::value && (A.dims()[3] == 16 || A.dims()[3] == 4))
+  {
+    if(k_size_h == 3 && k_size_w == 3)   // 3x3 g2
+    {
+        if (m_pads[0] != 0 || m_pads[1] != 0)
+        {
+            conv2d_3x3_s_g2_peel<s_h, s_w>(A, kernel);
+            conv2d_3x3_s_g2_core_dispatch<s_h, s_w, 0, 0>(A, kernel);
+            return true;
+        }
+        else if (m_pads[0] == 1 && m_pads[1] == 1)
+        {
+            // skip border
+            conv2d_3x3_s_g2_core_dispatch<s_h, s_w, 1, 1>(A, kernel);
+            return true;
+        }
+    }
+  }
+#endif
   //
   if (k_size_h == 2 && k_size_w == 2)   // 2x2
   {
