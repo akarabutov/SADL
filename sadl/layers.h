@@ -65,6 +65,7 @@
 #include "layer_tile.h"
 #include "layer_pad.h"
 #include "layer_floor.h"
+#include "layer_sub.h"
 
 namespace sadl
 {
@@ -112,6 +113,7 @@ inline std::string opName(const OperationType::Type op)
     DIRTYCASEPRINT(Tile);
     DIRTYCASEPRINT(Pad);
     DIRTYCASEPRINT(Floor);
+    DIRTYCASEPRINT(Sub);
   default:
     oss << "??";
     break;

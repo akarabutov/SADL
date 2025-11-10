@@ -124,6 +124,8 @@ template<typename T> bool copy(const sadl::layers::Layer<float> &layer, sadl::la
     break;
   case sadl::layers::OperationType::Floor:
     break;
+  case sadl::layers::OperationType::Sub:
+    break;
   case sadl::layers::OperationType::OperationExperimentalStart:
     break;
   case sadl::layers::OperationType::OperationExperimentalEnd:
