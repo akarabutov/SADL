@@ -80,7 +80,8 @@ struct OperationType
     Tile               = 30,
     Pad                = 31,
     Floor              = 32,
-    OperationTypeCount = 33,
+    Sub                = 33,
+    OperationTypeCount = 34,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 
   };

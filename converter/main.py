@@ -133,7 +133,8 @@ class OPTYPE(IntEnum):
     Tile = (30,)
     Pad = (31,)
     Floor = (32,)
-    
+    Sub = (33,)
+
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
     BatchMatMulV2 = 6
@@ -1784,6 +1785,7 @@ def parse_graph_node(
         myGraph[node.output[0]]["additional"]["pads"] = pads_hw
         myGraph[node.output[0]]["additional"]["data"] = node
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
+        
     elif node.op_type == "Floor":
         inputs, additional = [], {}
         inputs = [map_onnx_to_myGraph[n0name]]
@@ -1794,6 +1796,56 @@ def parse_graph_node(
         myGraph[node.output[0]]["op_type"] = OPTYPE.Floor
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
         
+    elif node.op_type == "Sub":
+        # dont't swap inputs like Add
+        # the constant should be in the second input
+        if is_constant(n0name, model_onnx.graph.initializer):
+            additional = {}
+            additional["data"] = node
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data(n0name, False, model_onnx.graph, verbose)
+            
+            if force_transpose_constant_tensor_dim4 and len(additional["dims"]) == 4: # nchw -> nhwc
+                additional["raw_data"], additional["dims"] = \
+                    transpose_constant_tensor_dim4(additional["raw_data"], additional["dims"], [0, 2, 3, 1])
+                    
+            map_onnx_to_myGraph[n0name] = n0name
+            myGraph[n0name] = {}
+            myGraph[n0name]["inputs"] = []
+            myGraph[n0name]["additional"] = additional
+            myGraph[n0name]["op_type"] = OPTYPE.Const
+        if is_constant(n1name, model_onnx.graph.initializer):
+            additional = {}
+            additional["data"] = node
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data(n1name, False, model_onnx.graph, verbose)
+                        
+            if force_transpose_constant_tensor_dim4 and len(additional["dims"]) == 4: # nchw -> nhwc
+                additional["raw_data"], additional["dims"] = \
+                    transpose_constant_tensor_dim4(additional["raw_data"], additional["dims"], [0, 2, 3, 1])
+                    
+            map_onnx_to_myGraph[n1name] = n1name
+            myGraph[n1name] = {}
+            myGraph[n1name]["inputs"] = []
+            myGraph[n1name]["additional"] = additional
+            myGraph[n1name]["op_type"] = OPTYPE.Const
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["op_type"] = OPTYPE.Sub
+
+        myGraph[node.output[0]]["inputs"] = [
+            map_onnx_to_myGraph[n0name],
+            map_onnx_to_myGraph[n1name],
+        ]
+        myGraph[node.output[0]]["additional"] = {}
+        myGraph[node.output[0]]["additional"]["data"] = node
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]
+
     else:
         raise Exception("[ERROR] node not supported:\n{})".format(node))
 
