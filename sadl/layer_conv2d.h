@@ -246,7 +246,7 @@ template<typename T> bool Conv2D<T>::apply(std::vector<Tensor<T> *> &in)
   {
     return apply_s<2, 1>(A, kernel);
   }
-  else if (m_strides[1] == 2 && m_strides[2] == 2 && m_groups == 1)
+  else if (m_strides[1] == 2 && m_strides[2] == 2)
   {
     return apply_s<2, 2>(A, kernel);
     ;
@@ -338,18 +338,46 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
   if ( m_pads[0] > 0 || m_pads[1] > 0 ) {
       conv2d_ixj_s_peel<s_h, s_w>(A, kernel);
   }
-  if ( marginT == 0 ) {
-      if ( marginL == 0 ) {
+  switch (marginT) {
+    case 0:
+      switch (marginL) {
+        case 0:
           conv2d_ixj_s_core_dispatch<s_h, s_w, 0 , 0>(A, kernel);
-      } else {
+          break;
+        case 1:
           conv2d_ixj_s_core_dispatch<s_h, s_w, 0 , 1>(A, kernel);
+          break;
+        case 2:
+          conv2d_ixj_s_core_dispatch<s_h, s_w, 0 , 2>(A, kernel);
+          break;
       }
-  } else {
-      if ( marginL == 0 ) {
+      break;
+    case 1:
+      switch (marginL) {
+        case 0:
           conv2d_ixj_s_core_dispatch<s_h, s_w, 1 , 0>(A, kernel);
-      } else {
+          break;
+        case 1:
           conv2d_ixj_s_core_dispatch<s_h, s_w, 1 , 1>(A, kernel);
+          break;
+        case 2:
+          conv2d_ixj_s_core_dispatch<s_h, s_w, 1 , 2>(A, kernel);
+          break;
       }
+      break;
+    case 2:
+      switch (marginL) {
+        case 0:
+          conv2d_ixj_s_core_dispatch<s_h, s_w, 2 , 0>(A, kernel);
+          break;
+        case 1:
+          conv2d_ixj_s_core_dispatch<s_h, s_w, 2 , 1>(A, kernel);
+          break;
+        case 2:
+          conv2d_ixj_s_core_dispatch<s_h, s_w, 2 , 2>(A, kernel);
+          break;
+      }
+      break;
   }
   return true;
 }
@@ -405,7 +433,7 @@ template<typename T> bool Conv2D<T>::init(const std::vector<Tensor<T> *> &in)
        std::cerr << "[ERROR] assymetric padding note tested" << std::endl;
        return false;
   }
-  if ((k_h>3&&m_pads[0]==0)||(k_w>3&&m_pads[1]==0)) {
+  if ((k_h>5&&m_pads[0]==0)||(k_w>5&&m_pads[1]==0)) {
        std::cerr << "[ERROR] pad 0 with large kernel not tested" << std::endl;
        return false;
   }
@@ -535,9 +563,9 @@ template<typename T> void Conv2D<T>::conv2d(const Tensor<T> &A, const Tensor<T> 
   for (int filter = 0; filter < nb_filters; ++filter)
   {
     int offset = (filter / cout_by_g) * cin_by_g;
-    for (int im_i = start_h; im_i < in_H; im_i += s_h)
+    for (int im_i = start_h; im_i < in_H - start_h; im_i += s_h)
     {
-      for (int im_j = start_w; im_j < in_W; im_j += s_w)
+      for (int im_j = start_w; im_j < in_W - start_w; im_j += s_w)
       {
         typename ComputationType<T>::type x = 0;
         for (int filter_i = -half_size_i; filter_i <= half_size_i; ++filter_i)
@@ -566,7 +594,7 @@ template<typename T> void Conv2D<T>::conv2d(const Tensor<T> &A, const Tensor<T> 
         ComputationType<T>::quantize(x, shift);
         COUNTERS(x);
         SATURATE(x);
-        m_out(im_nb, im_i / s_h, im_j / s_w, filter) = static_cast<T>(x);
+        m_out(im_nb, (im_i - start_h) / s_h, (im_j - start_w) / s_w, filter) = static_cast<T>(x);
       }
     }
   }
