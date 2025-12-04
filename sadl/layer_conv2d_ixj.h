@@ -155,9 +155,11 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
 #if DEBUG_PATH
   std::cout<<__PRETTY_FUNCTION__<<std::endl;
 #endif
-  for (int im_i = start_h + s_h/2 ; im_i < in_H - start_h; im_i += s_h)
+  int start_i = ((start_h + s_h - 1) / s_h) * s_h;
+  int start_j = ((start_w + s_w - 1) / s_w) * s_w;
+  for (int im_i = start_i; im_i < in_H - start_h; im_i += s_h)
   {
-    for (int im_j = start_w + s_w/2 ; im_j < in_W - start_w ; im_j += s_w)
+    for (int im_j = start_j; im_j < in_W - start_w ; im_j += s_w)
     {
       for (int filter = 0; filter < nb_filters; ++filter)
       {
@@ -208,9 +210,11 @@ template<> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<int16_t>::simd
   std::cout<<__PRETTY_FUNCTION__<<std::endl;
 #endif
   const int sft = shift;
-  for (int im_i = start_h + s_h/2 ; im_i < in_H - start_h; im_i += s_h)
+  int start_i = ((start_h + s_h - 1) / s_h) * s_h;
+  int start_j = ((start_w + s_w - 1) / s_w) * s_w;
+  for (int im_i = start_i; im_i < in_H - start_h; im_i += s_h)
   {
-    for (int im_j = start_w + s_w/2 ; im_j < in_W - start_w ; im_j += s_w)
+    for (int im_j = start_j; im_j < in_W - start_w ; im_j += s_w)
     {
       for (int filter = 0; filter < nb_filters; filter+=16)
       {
@@ -271,9 +275,11 @@ template<typename T> template<int in_D, int s_h, int s_w, int ihalf_size, int jh
 #endif
     assert(start_h + s_h - ihalf_size >= 0);
     assert(start_w + s_w - jhalf_size >= 0);
-    for (int im_i = start_h + s_h/2; im_i < in_H - start_h; im_i += s_h)
+    int start_i = ((start_h + s_h - 1) / s_h) * s_h;
+    int start_j = ((start_w + s_w - 1) / s_w) * s_w;
+    for (int im_i = start_i; im_i < in_H - start_h; im_i += s_h)
     {
-        for (int im_j = start_w + s_w/2; im_j < in_W - start_w; im_j += s_w)
+        for (int im_j = start_j; im_j < in_W - start_w; im_j += s_w)
         {
             for (int filter = 0; filter < nb_filters; ++filter)
             {
@@ -320,9 +326,11 @@ template<> template<int in_D, int s_h, int s_w, int ihalf_size, int jhalf_size,i
     assert(start_h + s_h - ihalf_size >= 0);
     assert(start_w + s_w - jhalf_size >= 0);
     const int sft = shift;
-    for (int im_i = start_h + s_h/2; im_i < in_H - start_h; im_i += s_h)
+    int start_i = ((start_h + s_h - 1) / s_h) * s_h;
+    int start_j = ((start_w + s_w - 1) / s_w) * s_w;
+    for (int im_i = start_i; im_i < in_H - start_h; im_i += s_h)
     {
-        for (int im_j = start_w + s_w/2; im_j < in_W - start_w; im_j += s_w)
+        for (int im_j = start_j; im_j < in_W - start_w; im_j += s_w)
         {
             for (int filter = 0; filter < nb_filters; filter+=16)
           {
@@ -800,6 +808,66 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
                   break;
               }
           }
+          else if (kernel.dims()[0] / 2 == 2 && kernel.dims()[1] / 2 == 0)
+          {
+              constexpr int ki = 2;
+              constexpr int kj = 0;
+              switch (in_D)
+              {
+              case 8:
+                  conv2d_ixj_s11_gD_d_core<8, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              case 16:
+                  CONV_IJ_GD_MOD16<16, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              case 24:
+                  conv2d_ixj_s11_gD_d_core<24, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              case 32:
+                  CONV_IJ_GD_MOD16<32, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              case 64:
+                  CONV_IJ_GD_MOD16<64, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              default:   // do default
+                  break;
+              }
+          }
+          else if (kernel.dims()[0] / 2 == 0 && kernel.dims()[1] / 2 == 2)
+          {
+              constexpr int ki = 0;
+              constexpr int kj = 2;
+              switch (in_D)
+              {
+              case 8:
+                  conv2d_ixj_s11_gD_d_core<8, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              case 16:
+                  CONV_IJ_GD_MOD16<16, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              case 24:
+                  conv2d_ixj_s11_gD_d_core<24, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              case 32:
+                  CONV_IJ_GD_MOD16<32, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              case 64:
+                  CONV_IJ_GD_MOD16<64, ki, kj, o_i, o_j>(A, kernel);
+                  return;
+                  break;
+              default:   // do default
+                  break;
+              }
+          }
          else if (kernel.dims()[0] / 2 == 1 && kernel.dims()[1] / 2 == 1)
          {
 
@@ -826,6 +894,12 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
                   return;
               } else if (kernel.dims()[0] == 3 && kernel.dims()[1] == 1 &&  in_D == 64) {
                   CONV_IJ_GD_S_MOD16<64,s_h,s_w,1,0,o_i,o_j>(A,kernel);
+                  return;
+              } else if (kernel.dims()[0] == 1 && kernel.dims()[1] == 5 &&  in_D == 64) {
+                CONV_IJ_GD_S_MOD16<64,s_h,s_w,0,2,o_i,o_j>(A,kernel);
+                return;
+              } else if (kernel.dims()[0] == 5 && kernel.dims()[1] == 1 &&  in_D == 64) { 
+                  CONV_IJ_GD_S_MOD16<64,s_h,s_w,2,0,o_i,o_j>(A,kernel);
                   return;
               }
       }
@@ -865,6 +939,58 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
     {
       constexpr int ki = 1;
       constexpr int kj = 0;
+      switch (in_D)
+      {
+      case 16:
+        CONV_IJ_G1_MOD16<16, ki, kj,o_i,o_j>(A, kernel);
+        return;
+        break;
+      case 32:
+        CONV_IJ_G1_MOD32<32, ki, kj,o_i,o_j>(A, kernel);
+        return;
+        break;
+      case 48:
+        CONV_IJ_G1_MOD16<48, ki, kj,o_i,o_j>(A, kernel);
+        return;
+        break;
+      case 64:
+        CONV_IJ_G1_MOD32<64, ki, kj,o_i,o_j>(A, kernel);
+        return;
+        break;
+      default:   // do default
+        break;
+      }
+    }
+    else if (kernel.dims()[0] / 2 == 2 && kernel.dims()[1] / 2 == 0)
+    {
+      constexpr int ki = 2;
+      constexpr int kj = 0;
+      switch (in_D)
+      {
+      case 16:
+        CONV_IJ_G1_MOD16<16, ki, kj,o_i,o_j>(A, kernel);
+        return;
+        break;
+      case 32:
+        CONV_IJ_G1_MOD32<32, ki, kj,o_i,o_j>(A, kernel);
+        return;
+        break;
+      case 48:
+        CONV_IJ_G1_MOD16<48, ki, kj,o_i,o_j>(A, kernel);
+        return;
+        break;
+      case 64:
+        CONV_IJ_G1_MOD32<64, ki, kj,o_i,o_j>(A, kernel);
+        return;
+        break;
+      default:   // do default
+        break;
+      }
+    }
+    else if (kernel.dims()[0] / 2 == 0 && kernel.dims()[1] / 2 == 2)
+    {
+      constexpr int ki = 0;
+      constexpr int kj = 2;
       switch (in_D)
       {
       case 16:
