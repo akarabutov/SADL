@@ -105,11 +105,41 @@ template<typename T> bool Concat<T>::apply(std::vector<Tensor<T> *> &in)
         // Integer path: down-quantize to qmin before storing.
         const T *src = in[n]->data() + in_off;
         T *dst       = m_out.data()   + out_off;
-        for (int e = 0; e < copy_elems; ++e)
+        bool simd = false;
+#if __AVX2__
+        if constexpr (std::is_same_v<T, int16_t>)
         {
-          T z = src[e];
-          ComputationType<T>::quantize(z, shift[n]);
-          dst[e] = z;
+          const int s = shift[n];
+          if (copy_elems % 16 == 0)
+          {
+            for (int e = 0; e < copy_elems; e += 16)
+            {
+              __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src + e));
+              __m256i r = _mm256_srai_epi16(v, s);
+              _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst + e), r);
+            }
+            simd = true;
+          }
+          else if (copy_elems % 8 == 0)
+          {
+            for (int e = 0; e < copy_elems; e += 8)
+            {
+              __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + e));
+              __m128i r = _mm_srai_epi16(v, s);
+              _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + e), r);
+            }
+            simd = true;
+          }
+        }
+#endif // __AVX2__
+        if (!simd)
+        {
+          for (int e = 0; e < copy_elems; ++e)
+          {
+            T z = src[e];
+            ComputationType<T>::quantize(z, shift[n]);
+            dst[e] = z;
+          }
         }
       }
       write_axis_cursor += len_a;
