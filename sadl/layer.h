@@ -81,7 +81,8 @@ struct OperationType
     Pad                = 31,
     Floor              = 32,
     Sub                = 33,
-    OperationTypeCount = 34,
+    Abs                = 34,
+    OperationTypeCount = 35,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 
   };
