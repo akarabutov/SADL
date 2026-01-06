@@ -19,8 +19,7 @@ for F in $L; do
 done
 
 
-L="abs \
-  conv2d_4_8x8x4_k5x1s1,1_g4_p0,0 conv2d_4_8x8x4_k1x5s1,1_g4_p0,0 conv2d_4_8x8x4_k1x1s1,1_g1_p0,0 conv2d_4_8x8x4_k1x1s1,1_g4_p0,0 conv2d_4_8x8x4_k1x1s2,1_g1_p0,0 conv2d_4_8x8x4_k1x3s1,2_g1_p0,1 \
+L="conv2d_4_8x8x4_k5x1s1,1_g4_p0,0 conv2d_4_8x8x4_k1x5s1,1_g4_p0,0 conv2d_4_8x8x4_k1x1s1,1_g1_p0,0 conv2d_4_8x8x4_k1x1s1,1_g4_p0,0 conv2d_4_8x8x4_k1x1s2,1_g1_p0,0 conv2d_4_8x8x4_k1x3s1,2_g1_p0,1 \
    conv2d_4_8x8x4_k3x1s1,1_g1_p1,0 conv2d_4_8x8x4_k3x1s1,1_g4_p1,0 conv2d_4_8x8x4_k3x3s1,1_g1_p1,1 conv2d_4_8x8x4_k3x3s2,1_g1_p1,1 \
   conv2d_4_8x8x4_k3x3s2,2_g1_p1,1 conv2d_4_8x8x4_k5x5s1,1_g1_p2,2 conv2d_4_8x8x4_k5x5s1,1_g4_p2,2 conv2d_4_8x8x4_k5x5s2,1_g1_p2,2 \
   conv2d_4_8x9x4_k1x1s2,1_g1_p0,0 conv2d_4_8x9x4_k3x1s1,1_g4_p1,0 conv2d_4_8x9x4_k3x3s1,1_g4_p1,1 conv2d_4_8x9x4_k3x3s2,1_g1_p1,1 \
@@ -42,7 +41,8 @@ L="abs \
   conv2d_1_4x4x16_k3x3s1,1_g1_p0,0 gridsample_bicubic resize_bicubic_up2 \
   tile \
   conv2d_transpose_32_2x2x3_k2x2s2,2_p0,0 conv2d_24_2x2x16_k2x2s2,2_g1_p0,0 conv2d_16_2x2x8_k2x2s2,2_g1_p0,0 conv2d_32_2x2x16_k2x2s2,2_g1_p0,0 conv2d_64_2x2x32_k2x2s2,2_g1_p0,0 pad_edge pad_reflect pad_constant sub flatten floor concat gridsample_bicubic_zeros gridsample_bilinear_zeros gridsample_nearest_zeros resize_bilinear_down2 resize_bilinear_down4 resize_bilinear_up4 \
-  maxpool_k3_s2_d16 "
+  maxpool_k3_s2_d16 \
+  depth2space_N2 depth2space_N4 abs"
 
 # mini_model_bb_mult 
 for F in $L; do

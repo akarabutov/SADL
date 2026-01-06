@@ -82,7 +82,8 @@ struct OperationType
     Floor              = 32,
     Sub                = 33,
     Abs                = 34,
-    OperationTypeCount = 35,
+    Depth2Space        = 35,
+    OperationTypeCount = 36,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 
   };
