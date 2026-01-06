@@ -135,6 +135,7 @@ class OPTYPE(IntEnum):
     Floor = (32,)
     Sub = (33,)
     Abs = (34,)
+    Depth2Space = (35,)
 
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
@@ -1855,6 +1856,20 @@ def parse_graph_node(
         myGraph[node.output[0]]["additional"]["data"] = node
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
         
+    elif node.op_type == "DepthToSpace":
+        inputs, additional = [], {}
+        inputs = [map_onnx_to_myGraph[n0name]]
+        additional["data"] = node
+        a = getAttribute(node, "blocksize")
+        additional["blocksize"] = a.i
+        #a = getAttribute(node, "mode")
+        #additional["mode"] = a.s
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["inputs"] = inputs
+        myGraph[node.output[0]]["additional"] = additional
+        myGraph[node.output[0]]["op_type"] = OPTYPE.Depth2Space
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]       
+
     else:
         raise Exception("[ERROR] node not supported:\n{})".format(node))
 
@@ -2223,6 +2238,11 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
                         print(f"#\t\t {pad_value}")
                     f.write(struct.pack("i", int(pad_value)))
 
+            elif node["op_type"] == OPTYPE.Depth2Space:
+                if verbose:
+                    print("#\t block size", node["additional"]["blocksize"])
+                f.write(struct.pack("i", int(node["additional"]["blocksize"])))
+                
             if (
                 node["op_type"] == OPTYPE.Conv2D
                 or node["op_type"] == OPTYPE.Conv2DTranspose

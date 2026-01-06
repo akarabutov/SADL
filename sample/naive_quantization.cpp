@@ -85,7 +85,8 @@ bool toQuantize(sadl::layers::OperationType::Type type)
          && type != sadl::layers::OperationType::Compare && type != sadl::layers::OperationType::Where && type != sadl::layers::OperationType::Maximum
          && type != sadl::layers::OperationType::Minimum && type != sadl::layers::OperationType::AveragePool && type != sadl::layers::OperationType::ReduceMean
          && type != sadl::layers::OperationType::Tile && type != sadl::layers::OperationType::Pad && type != sadl::layers::OperationType::Floor && type != sadl::layers::OperationType::Sub
-         && type != sadl::layers::OperationType::Abs;
+         && type != sadl::layers::OperationType::Abs
+         && type != sadl::layers::OperationType::Depth2Space;
 }
 
 template<typename T> void quantizeTensor(const sadl::Tensor<float> &B, sadl::Tensor<T> &Bq)
