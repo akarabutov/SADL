@@ -183,6 +183,12 @@ template<typename T> bool sadl::layers::Pad<T>::dump(std::ostream &file)
   return true;
 }
 
+template<typename T> bool sadl::layers::GatherElements<T>::dump(std::ostream &file)
+{
+  file.write((const char *) &m_axis, sizeof(m_axis));
+  return true;
+}
+
 template<typename T> bool sadl::layers::Compare<T>::dump(std::ostream &file)
 {
   file.write((const char *) &m_mode, sizeof(m_mode));

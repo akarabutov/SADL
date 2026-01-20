@@ -69,6 +69,7 @@
 #include "layer_abs.h"
 #include "layer_depth2space.h"
 #include "layer_gather.h"
+#include "layer_gather_elements.h"
 
 namespace sadl
 {
@@ -120,6 +121,7 @@ inline std::string opName(const OperationType::Type op)
     DIRTYCASEPRINT(Abs);
     DIRTYCASEPRINT(Depth2Space);
     DIRTYCASEPRINT(Gather);
+    DIRTYCASEPRINT(GatherElements);
   default:
     oss << "??";
     break;
