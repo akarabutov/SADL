@@ -137,6 +137,7 @@ class OPTYPE(IntEnum):
     Abs = (34,)
     Depth2Space = (35,)
     Gather = (36,)
+    GatherElements = (37,)
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
     BatchMatMulV2 = 6
@@ -203,12 +204,12 @@ def getAttribute(node, attr):
     return None
 
 
-def transpose_constant_tensor_dim4(raw_data, dims, perm):
+def transpose_constant_tensor_dim4(raw_data, dims, perm, data_type=np.float32):
     """
         Transpose a 4D constant tensor
     """
     assert len(dims) == len(perm), f"[ERROR] Mismatched lengths: dims({len(dims)}) vs perm({len(perm)})"
-    x = np.frombuffer(raw_data, dtype=np.float32)
+    x = np.frombuffer(raw_data, dtype=data_type)
     x = np.reshape(x, dims)
     x = np.transpose(x, perm)
     newShape = [dims[i] for i in perm]
@@ -1957,7 +1958,47 @@ def parse_graph_node(
         myGraph[node.output[0]]["additional"] = additional
         myGraph[node.output[0]]["op_type"] = OPTYPE.Gather
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
-
+        
+    elif node.op_type == "GatherElements":
+        if is_constant(n1name, model_onnx.graph.initializer):
+            myGraph[n1name] = {}
+            myGraph[n1name]["op_type"] = OPTYPE.Const
+            myGraph[n1name]["inputs"] = []
+            additional = {}
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data(
+                n1name, False, model_onnx.graph, verbose
+            )
+            if (len(additional["dims"]) == 4):
+                additional["raw_data"], additional["dims"] = \
+                    transpose_constant_tensor_dim4(additional["raw_data"], additional["dims"], [0, 2, 3, 1], data_type=np.int32)
+            additional["data"] = node
+            myGraph[n1name]["additional"] = additional
+            
+        map_onnx_to_myGraph[n1name] = n1name
+        inputs, additional = [], {}
+        inputs = [map_onnx_to_myGraph[n0name], map_onnx_to_myGraph[n1name]]
+        input_dims = extract_dim_by_name(n0name, model_onnx.graph)
+        a = getAttribute(node, "axis")
+        if len(input_dims) == 4:  # nchw -> nhwc
+            if a.i == 1:
+                a.i = 3
+            elif a.i == 2:
+                a.i = 1
+            elif a.i == 3:
+                a.i = 2
+        
+        additional["data"] = node
+        additional["axis"] = a.i
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["inputs"] = inputs
+        myGraph[node.output[0]]["additional"] = additional
+        myGraph[node.output[0]]["op_type"] = OPTYPE.GatherElements
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]
+        
     else:
         raise Exception("[ERROR] node not supported:\n{})".format(node))
 
@@ -2325,7 +2366,7 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
                     if verbose:
                         print(f"#\t\t {pad_value}")
                     f.write(struct.pack("i", int(pad_value)))
-
+                
             elif node["op_type"] == OPTYPE.Depth2Space:
                 if verbose:
                     print("#\t block size", node["additional"]["blocksize"])
@@ -2340,6 +2381,11 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
                     print("#\t indices_is_scalar", node["additional"]["indices_is_scalar"])
                 f.write(struct.pack("?", bool(node["additional"]["indices_is_scalar"])))
 
+            elif node["op_type"] == OPTYPE.GatherElements:
+                if verbose:
+                    print("#\t axis", node["additional"]["axis"])
+                f.write(struct.pack("i", int(node["additional"]["axis"])))
+                
             if (
                 node["op_type"] == OPTYPE.Conv2D
                 or node["op_type"] == OPTYPE.Conv2DTranspose

@@ -40,7 +40,7 @@ L="conv2d_4_8x8x4_k5x1s1,1_g4_p0,0 conv2d_4_8x8x4_k1x5s1,1_g4_p0,0 conv2d_4_8x8x
   conv2d_16_4x4x16_k3x3s1,1_g16_p0,0 conv2d_16_4x4x16_k1x3s1,1_g16_p0,0 conv2d_16_4x4x16_k3x1s1,1_g16_p0,0 \
   conv2d_1_4x4x16_k3x3s1,1_g1_p0,0 gridsample_bicubic resize_bicubic_up2 \
   tile \
-  conv2d_transpose_32_2x2x3_k2x2s2,2_p0,0 conv2d_24_2x2x16_k2x2s2,2_g1_p0,0 conv2d_16_2x2x8_k2x2s2,2_g1_p0,0 conv2d_32_2x2x16_k2x2s2,2_g1_p0,0 conv2d_64_2x2x32_k2x2s2,2_g1_p0,0 pad_edge pad_reflect pad_constant sub gather flatten floor concat gridsample_bicubic_zeros gridsample_bilinear_zeros gridsample_nearest_zeros resize_bilinear_down2 resize_bilinear_down4 resize_bilinear_up4 \
+  conv2d_transpose_32_2x2x3_k2x2s2,2_p0,0 conv2d_24_2x2x16_k2x2s2,2_g1_p0,0 conv2d_16_2x2x8_k2x2s2,2_g1_p0,0 conv2d_32_2x2x16_k2x2s2,2_g1_p0,0 conv2d_64_2x2x32_k2x2s2,2_g1_p0,0 pad_edge pad_reflect pad_constant sub gather gather_elements flatten floor concat gridsample_bicubic_zeros gridsample_bilinear_zeros gridsample_nearest_zeros resize_bilinear_down2 resize_bilinear_down4 resize_bilinear_up4 \
   maxpool_k3_s2_d16 \
   depth2space_N2 depth2space_N4 abs"
 

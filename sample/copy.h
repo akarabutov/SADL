@@ -135,6 +135,9 @@ template<typename T> bool copy(const sadl::layers::Layer<float> &layer, sadl::la
     dynamic_cast<sadl::layers::Gather<T> &>(layerQ).m_axis = dynamic_cast<const sadl::layers::Gather<float> &>(layer).m_axis;
     dynamic_cast<sadl::layers::Gather<T> &>(layerQ).m_indicesIsScalar = dynamic_cast<const sadl::layers::Gather<float> &>(layer).m_indicesIsScalar;
     break;
+  case sadl::layers::OperationType::GatherElements: 
+    dynamic_cast<sadl::layers::GatherElements<T> &>(layerQ).m_axis = dynamic_cast<const sadl::layers::GatherElements<float> &>(layer).m_axis;
+    break;  
   case sadl::layers::OperationType::OperationExperimentalStart:
     break;
   case sadl::layers::OperationType::OperationExperimentalEnd:
