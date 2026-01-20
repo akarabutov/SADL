@@ -136,7 +136,7 @@ class OPTYPE(IntEnum):
     Sub = (33,)
     Abs = (34,)
     Depth2Space = (35,)
-
+    Gather = (36,)
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
     BatchMatMulV2 = 6
@@ -328,6 +328,8 @@ def extract_additional_data_from_node(data, to_transpose):
 
         def convert_int64_to_int32(binary_data):
             x = np.frombuffer(binary_data, dtype=np.int64)
+            if len(x) == 0: # if can't find data in data.raw_data, then find in data.int64_data
+                x = np.int32(data.int64_data)
             x = x.astype(np.int32)
             return x.tobytes()
 
@@ -409,6 +411,52 @@ def extract_dims(name, onnx_graph):
             return node.type.tensor_type.shape.dim
     quit("[ERROR] unable to extract dims in {}".format(name))
 
+def extract_dim_by_name(name, onnx_graph):
+    def _dims_from_value_info(vi):
+        L = []
+        if not vi.type.HasField("tensor_type"):
+            return L
+        ttype = vi.type.tensor_type
+        if not ttype.HasField("shape"):
+            return L
+        for d in ttype.shape.dim:
+            which = d.WhichOneof("value")
+            if which == "dim_value":
+                L.append(d.dim_value)
+            elif which == "dim_param":
+                L.append(d.dim_param)
+            else:
+                L.append(None)
+        return L
+
+    # 1) initializer
+    for init in onnx_graph.initializer:
+        if name == init.name:
+            return [int(x) for x in init.dims]
+
+    # 2) Constant node (or node with value)
+    for node in onnx_graph.node:
+        if len(node.output) > 0 and name == node.output[0]:
+            a = getAttribute(node, "value")
+            if a is not None and a.t is not None:
+                return [int(x) for x in a.t.dims]
+
+    # 3) graph.input
+    for node in onnx_graph.input:
+        if name == node.name:
+            return _dims_from_value_info(node)
+
+    # 4) graph.output
+    for node in onnx_graph.output:
+        if name == node.name:
+            return _dims_from_value_info(node)
+
+    # 5) graph.value_info
+    for node in onnx_graph.value_info:
+        if name == node.name:
+            return _dims_from_value_info(node)
+
+    quit("[ERROR] unable to extract dim values in {}".format(name))
 
 # get the nodes with name as input
 def getNodesWithInput(name, model):
@@ -1868,7 +1916,47 @@ def parse_graph_node(
         myGraph[node.output[0]]["inputs"] = inputs
         myGraph[node.output[0]]["additional"] = additional
         myGraph[node.output[0]]["op_type"] = OPTYPE.Depth2Space
-        map_onnx_to_myGraph[node.output[0]] = node.output[0]       
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]              
+
+    elif node.op_type == "Gather":
+        indices_is_scalar = False
+        if is_constant(n1name, model_onnx.graph.initializer):
+            myGraph[n1name] = {}
+            myGraph[n1name]["op_type"] = OPTYPE.Const
+            myGraph[n1name]["inputs"] = []
+            additional = {}
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data(
+                n1name, False, model_onnx.graph, verbose
+            )
+            additional["data"] = node
+            myGraph[n1name]["additional"] = additional
+            input2_dims = extract_dim_by_name(n1name, model_onnx.graph)
+            if len(input2_dims) == 0: # input is scalar 
+                indices_is_scalar = True 
+        map_onnx_to_myGraph[n1name] = n1name
+        inputs, additional = [], {}
+        inputs = [map_onnx_to_myGraph[n0name], map_onnx_to_myGraph[n1name]]
+        input1_dims = extract_dim_by_name(n0name, model_onnx.graph)
+        a = getAttribute(node, "axis")
+        if len(input1_dims) == 4:  # nchw -> nhwc
+            if a.i == 1:
+                a.i = 3
+            elif a.i == 2:
+                a.i = 1
+            elif a.i == 3:
+                a.i = 2
+        additional["data"] = node
+        additional["axis"] = a.i
+        additional["indices_is_scalar"] = indices_is_scalar
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["inputs"] = inputs
+        myGraph[node.output[0]]["additional"] = additional
+        myGraph[node.output[0]]["op_type"] = OPTYPE.Gather
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]
 
     else:
         raise Exception("[ERROR] node not supported:\n{})".format(node))
@@ -2243,6 +2331,15 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
                     print("#\t block size", node["additional"]["blocksize"])
                 f.write(struct.pack("i", int(node["additional"]["blocksize"])))
                 
+            elif node["op_type"] == OPTYPE.Gather:
+                if verbose:
+                    print("#\t axis", node["additional"]["axis"])
+                f.write(struct.pack("i", int(node["additional"]["axis"])))
+                
+                if verbose:
+                    print("#\t indices_is_scalar", node["additional"]["indices_is_scalar"])
+                f.write(struct.pack("?", bool(node["additional"]["indices_is_scalar"])))
+
             if (
                 node["op_type"] == OPTYPE.Conv2D
                 or node["op_type"] == OPTYPE.Conv2DTranspose
