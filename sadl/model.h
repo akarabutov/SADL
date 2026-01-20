@@ -218,6 +218,9 @@ template<typename T> std::unique_ptr<layers::Layer<T>> createLayer(int32_t id, l
   case layers::OperationType::Depth2Space: 
     return std::unique_ptr<layers::Layer<T>>(new layers::Depth2Space<T>{ id, op });    
     break;
+  case layers::OperationType::Gather:
+    return std::unique_ptr<layers::Layer<T>>(new layers::Gather<T>{ id, op });
+    break;
   case layers::OperationType::OperationTypeCount:
     std::cerr << "[ERROR] unknown layer " << op << std::endl;
     exit(-1);

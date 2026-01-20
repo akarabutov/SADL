@@ -83,7 +83,8 @@ struct OperationType
     Sub                = 33,
     Abs                = 34,
     Depth2Space        = 35,
-    OperationTypeCount = 36,
+    Gather             = 36,
+    OperationTypeCount = 37,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 
   };

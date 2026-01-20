@@ -194,6 +194,13 @@ template<typename T> bool sadl::layers::Where<T>::dump(std::ostream &file)
   return true;
 }
 
+template<typename T> bool sadl::layers::Gather<T>::dump(std::ostream &file)
+{
+  file.write((const char *) &m_axis, sizeof(m_axis));
+  file.write((const char *) &m_indicesIsScalar, sizeof(m_indicesIsScalar));
+  return true;
+}
+
 template<typename T> bool sadl::layers::Layer<T>::dump(std::ostream &file)
 {
   // std::cout<<"todo? "<<opName(op_)<<std::endl;

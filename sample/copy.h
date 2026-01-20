@@ -131,6 +131,10 @@ template<typename T> bool copy(const sadl::layers::Layer<float> &layer, sadl::la
   case sadl::layers::OperationType::Depth2Space: 
     dynamic_cast<sadl::layers::Depth2Space<T> &>(layerQ).blocksize=dynamic_cast<const sadl::layers::Depth2Space<float> &>(layer).blocksize;
     break;    
+  case sadl::layers::OperationType::Gather: 
+    dynamic_cast<sadl::layers::Gather<T> &>(layerQ).m_axis = dynamic_cast<const sadl::layers::Gather<float> &>(layer).m_axis;
+    dynamic_cast<sadl::layers::Gather<T> &>(layerQ).m_indicesIsScalar = dynamic_cast<const sadl::layers::Gather<float> &>(layer).m_indicesIsScalar;
+    break;
   case sadl::layers::OperationType::OperationExperimentalStart:
     break;
   case sadl::layers::OperationType::OperationExperimentalEnd:
