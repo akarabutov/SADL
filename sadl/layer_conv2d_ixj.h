@@ -155,8 +155,8 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
 #if DEBUG_PATH
   std::cout<<__PRETTY_FUNCTION__<<std::endl;
 #endif
-  int start_i = start_h + ((o_i == 0) ? (s_h / 2) : 0);
-  int start_j = start_w + ((o_j == 0) ? (s_w / 2) : 0);
+  int start_i = (o_i == 0) ? ((start_h + s_h - 1) / s_h) * s_h : start_h;
+  int start_j = (o_j == 0) ? ((start_w + s_w - 1) / s_w) * s_w : start_w;
   for (int im_i = start_i; im_i < in_H - start_h; im_i += s_h)
   {
     for (int im_j = start_j; im_j < in_W - start_w ; im_j += s_w)
@@ -210,8 +210,8 @@ template<> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<int16_t>::simd
   std::cout<<__PRETTY_FUNCTION__<<std::endl;
 #endif
   const int sft = shift;
-  int start_i = start_h + ((o_i == 0) ? (s_h / 2) : 0);
-  int start_j = start_w + ((o_j == 0) ? (s_w / 2) : 0);
+  int start_i = (o_i == 0) ? ((start_h + s_h - 1) / s_h) * s_h : start_h;
+  int start_j = (o_j == 0) ? ((start_w + s_w - 1) / s_w) * s_w : start_w;
   for (int im_i = start_i; im_i < in_H - start_h; im_i += s_h)
   {
     for (int im_j = start_j; im_j < in_W - start_w ; im_j += s_w)
@@ -275,8 +275,8 @@ template<typename T> template<int in_D, int s_h, int s_w, int ihalf_size, int jh
 #endif
     assert(start_h + s_h - ihalf_size >= 0);
     assert(start_w + s_w - jhalf_size >= 0);
-    int start_i = start_h + ((o_i == 0) ? (s_h / 2) : 0);
-    int start_j = start_w + ((o_j == 0) ? (s_w / 2) : 0);
+    int start_i = (o_i == 0) ? ((start_h + s_h - 1) / s_h) * s_h : start_h;
+    int start_j = (o_j == 0) ? ((start_w + s_w - 1) / s_w) * s_w : start_w;
     for (int im_i = start_i; im_i < in_H - start_h; im_i += s_h)
     {
         for (int im_j = start_j; im_j < in_W - start_w; im_j += s_w)
@@ -326,8 +326,8 @@ template<> template<int in_D, int s_h, int s_w, int ihalf_size, int jhalf_size,i
     assert(start_h + s_h - ihalf_size >= 0);
     assert(start_w + s_w - jhalf_size >= 0);
     const int sft = shift;
-    int start_i = start_h + ((o_i == 0) ? (s_h / 2) : 0);
-    int start_j = start_w + ((o_j == 0) ? (s_w / 2) : 0);
+    int start_i = (o_i == 0) ? ((start_h + s_h - 1) / s_h) * s_h : start_h;
+    int start_j = (o_j == 0) ? ((start_w + s_w - 1) / s_w) * s_w : start_w;
     for (int im_i = start_i; im_i < in_H - start_h; im_i += s_h)
     {
         for (int im_j = start_j; im_j < in_W - start_w; im_j += s_w)
