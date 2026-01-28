@@ -62,13 +62,15 @@ static constexpr float kSparsifySizeThreshold = 1000.0f;
 // #define DEBUG_MODEL_ANALYZE 1 // output layers info for hw friendly aspects
 // #define DEBUG_PATH          1 // output functions used for operations
 
+
 #if SATURATE_RESULT
 #define SATURATE(X)                                                                                                                                            \
   if (!std::is_same<T, float>::value)                                                                                                                          \
-  X = (X > ComputationType<T>::max) ? ComputationType<T>::max : (X < -ComputationType<T>::max ? -ComputationType<T>::max : X)
+  X = (X > ComputationType<T>::max) ? ComputationType<T>::max : (X < -ComputationType<T>::max - 1? -ComputationType<T>::max - 1: X)
 #else
 #define SATURATE(X)
 #endif
+
 
 #if DEBUG_COUNTERS
 template<typename T> T my_abs(T x) { return x < T{} ? -x : x; }
