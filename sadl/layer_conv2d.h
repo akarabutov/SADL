@@ -144,6 +144,12 @@ protected:
     simd16_conv2d_1x1_s_d<in_D, s_h, s_w>(A, kernel);
   }
 
+  template<int in_D, int s_h, int s_w> void   simd_conv2d_1x1_s_d(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    assert(false);
+    exit(-1);
+  }
+
   template<int in_D, int s_h, int s_w, int o_i, int o_j> void simd16_conv2d_3x3_in16_out16_s_g2_d(const Tensor<T> &A, const Tensor<T> &kernel)
   {
     std::cout << "[WARNING] generic conv2d for debug" << std::endl;
@@ -170,6 +176,12 @@ protected:
   {
     simd16_conv2d_3x3_s_g1_d<in_D, s_h, s_w, o_i, o_j>(A, kernel);
   }
+
+  template<int in_D, int s_h, int s_w,int o_i,int o_j> void simd_conv2d_3x3_s_g1_d_core(const Tensor<T> &A, const Tensor<T> &kernel) {
+    assert(false);
+    exit(-1);
+  }
+
   template<int in_D, int ihalf_size, int jhalf_size,int o_i,int o_j> void simd16_conv2d_ixj_s11_g1_d_core(const Tensor<T> &A, const Tensor<T> &kernel) {
     conv2d_ixj_s11_g1_d_core<in_D,ihalf_size,jhalf_size, o_i, o_j>(A,kernel);
 
@@ -193,6 +205,17 @@ protected:
     simd16_conv2d_2x2_s_d<in_D, s_h, s_w>(A, kernel);
   }
 #endif
+
+  template<int s_h, int s_w>
+  void conv2d_ixj_peel_sw(const Tensor<T> &A, const Tensor<T> &kernel, Tensor<T> &out,
+                                     const int nb_filters,
+                                     const int half_size_i, const int half_size_j,
+                                     const int im_nb, const int shift, const int cout_by_g, const int cin_by_g, const int start_h, const int start_w,
+                                     const int in_H, const int in_W) {
+    assert(false);
+    exit(-1);
+  }
+
   static constexpr int bufSize = 256 + 8 * 2;
   static constexpr int vectorSize = 16; // has to be 16 for the current SIMD optimization
   static constexpr int dSize = 7;

@@ -539,10 +539,12 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
 template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::conv2d_3x3_s_g1_core_dispatch(const Tensor<T> &A, const Tensor<T> &kernel)
 {
 #if __AVX2__
-#define CONV_MOD8   simd8_conv2d_3x3_s_g1_d
-#define CONV_MOD16 simd16_conv2d_3x3_s_g1_d
-#define CONV_MOD32 simd32_conv2d_3x3_s_g1_d
+#define CONV_OP    simd_conv2d_3x3_s_g1_d_core
+#define CONV_MOD8  simd_conv2d_3x3_s_g1_d_core
+#define CONV_MOD16 simd_conv2d_3x3_s_g1_d_core
+#define CONV_MOD32 simd_conv2d_3x3_s_g1_d_core
 #else
+#define CONV_OP conv2d_3x3_s_g1_d_core
 #define CONV_MOD8 conv2d_3x3_s_g1_d_core
 #define CONV_MOD16 conv2d_3x3_s_g1_d_core
 #define CONV_MOD32 conv2d_3x3_s_g1_d_core
@@ -555,13 +557,13 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
     conv2d_3x3_s_g1_d_core<1, s_h, s_w, o_i, o_j>(A, kernel);
     break;
   case 2:
-    conv2d_3x3_s_g1_d_core<2, s_h, s_w, o_i, o_j>(A, kernel);
+    CONV_OP<2, s_h, s_w, o_i, o_j>(A, kernel);
     break;
   case 4:
-    conv2d_3x3_s_g1_d_core<4, s_h, s_w, o_i, o_j>(A, kernel);
+    CONV_OP<4, s_h, s_w, o_i, o_j>(A, kernel);
     break;
   case 6:
-    conv2d_3x3_s_g1_d_core<6, s_h, s_w, o_i, o_j>(A, kernel);
+    CONV_OP<6, s_h, s_w, o_i, o_j>(A, kernel);
     break;
   case 8:
     CONV_MOD8<8, s_h, s_w, o_i, o_j>(A, kernel);
@@ -594,6 +596,7 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
     conv2d_3x3_s_g1_core<s_h, s_w, o_i, o_j>(A, kernel);
     break;
   }
+#undef CONV_OP
 #undef CONV_MOD8
 #undef CONV_MOD16
 #undef CONV_MOD32
@@ -683,6 +686,195 @@ template<typename T> template<int in_D, int s_h, int s_w,int o_i,int o_j> void C
 // ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ///
 #if __AVX2__
+template<uint8_t N, int in_D>
+void inline simd_conv2d_3x3_s_d_N_way(const int filterStart, const int nb_filters, const int shift,
+                                      const Tensor<int16_t> &A, const Tensor<int16_t> &kernel, Tensor<int16_t> &out,
+                                      int im_i, int im_j,  const int64_t outCore)
+{
+  static_assert(N <= 8);   // Bigger than this number optimization doesn't make sence
+
+  typedef int16_t T;
+
+  constexpr int half_size = 1;
+
+  constexpr int     remainingElements = (in_D % 16);
+  constexpr int32_t mask_bits[8]      = {
+    remainingElements >= 1 ? -1 : 0, remainingElements >= 3 ? -1 : 0, remainingElements >= 5 ? -1 : 0, remainingElements >= 7 ? -1 : 0,
+    remainingElements >= 9 ? -1 : 0, remainingElements >= 11 ? -1 : 0, remainingElements >= 13 ? -1 : 0, remainingElements >= 15 ? -1 : 0,
+  };
+
+  for (int filter = filterStart; filter < nb_filters; filter += N)
+  {
+    __m256i s[N];
+    for (int wayIdx = 0; wayIdx < N; wayIdx++)
+    {
+      s[wayIdx] = _mm256_setzero_si256();
+    }
+
+    for (int filter_i = -half_size; filter_i <= half_size; ++filter_i)
+    {   // fixed
+      const int ii = im_i + filter_i;
+      const int ki = half_size + filter_i;
+      for (int filter_j = -half_size; filter_j <= half_size; ++filter_j)
+      {   // fixed
+        const int jj = im_j + filter_j;
+        const int kj = half_size + filter_j;
+
+        if constexpr ((in_D % 16) == 0)
+        {
+          // for mod16 case
+          for (int filter_d = 0; filter_d < in_D; filter_d += 16)
+          {
+            const __m256i *aptr = (__m256i *__restrict) A.addr(0, ii, jj, filter_d);
+            const __m256i  v0   = _mm256_load_si256(aptr);
+            const auto  kptrCore = kernel.addrCore(ki, kj, filter);
+
+            for (int wayIdx = 0; wayIdx < N; wayIdx++)
+            {
+                const __m256i *kptr = (const __m256i *__restrict) kernel.addrFinalIn(kptrCore, wayIdx * in_D + filter_d);
+
+                const __m256i k0 = _mm256_load_si256(kptr);   // or loadu ?
+
+                const __m256i mad0 = _mm256_madd_epi16(k0, v0);   // res in si32
+                s[wayIdx]          = _mm256_add_epi32(s[wayIdx], mad0);
+            };
+          }
+        }
+        else
+        {
+          // in_D is not dividable by 16 and so the memory is not aligned
+          //  for mod16 case
+          constexpr int in_D_upperBorder = (in_D / 16) * 16;
+          for (int filter_d = 0; filter_d < in_D_upperBorder; filter_d += 16)
+          {
+            const __m256i *aptr = (__m256i *__restrict) A.addr(0, ii, jj, filter_d);
+            const __m256i  v0   = _mm256_loadu_si256(aptr);
+            const auto  kptrCore = kernel.addrCore(ki, kj, filter);
+
+            for (int wayIdx = 0; wayIdx < N; wayIdx++)
+            {
+                const __m256i *kptr = (const __m256i *__restrict) kernel.addrFinalIn(kptrCore, wayIdx * in_D + filter_d);
+
+                const __m256i k0 = _mm256_loadu_si256(kptr);   // or loadu ?
+
+                const __m256i mad0 = _mm256_madd_epi16(k0, v0);   // res in si32
+                s[wayIdx]          = _mm256_add_epi32(s[wayIdx], mad0);
+            };
+          }
+        }
+        if constexpr ((in_D % 16) > 0)
+        {
+          const __m256i loadMask = _mm256_loadu_si256((const __m256i *) &mask_bits[0]);
+
+          constexpr int filterIdx = (in_D / 16) * 16;
+          const int    *aptr      = (int *__restrict) (__m256i *__restrict) A.addr(0, ii, jj, filterIdx);
+          const __m256i v0        = _mm256_maskload_epi32(aptr, loadMask);
+
+          const auto  kptrCore = kernel.addrCore(ki, kj, filter);
+
+          for (int wayIdx = 0; wayIdx < N; wayIdx++)
+          {
+              const int *kptr = (const int *__restrict) kernel.addrFinalIn(kptrCore, wayIdx * in_D +filterIdx);
+
+              const __m256i k0 = _mm256_maskload_epi32(kptr, loadMask);
+
+              const __m256i mad0 = _mm256_madd_epi16(k0, v0);   // res in si32
+              s[wayIdx]          = _mm256_add_epi32(s[wayIdx], mad0);
+          };
+        }
+      }
+    }
+
+    if constexpr (N != 8)
+    {
+      for (int wayIdx = 0; wayIdx < N; wayIdx++)
+      {
+          typename ComputationType<int16_t>::type z = (sum32_int16(s[wayIdx]) >> shift);
+          SATURATE(z);
+          *out.addrFinalOut(outCore, filter + wayIdx) = static_cast<int16_t>(z);
+      };
+    }
+    else
+    {
+      __m256i sum1 = _mm256_hadd_epi32(_mm256_hadd_epi32(s[0], s[1]), _mm256_hadd_epi32(s[2], s[3]));
+
+      __m256i sum2 = _mm256_hadd_epi32(_mm256_hadd_epi32(s[4], s[5]), _mm256_hadd_epi32(s[6], s[7]));
+
+      __m128i endRes = _mm_packs_epi32(_mm_srai_epi32(_mm_add_epi32(_mm256_castsi256_si128(sum1), _mm256_extracti128_si256(sum1, 1)), shift),
+                                       _mm_srai_epi32(_mm_add_epi32(_mm256_castsi256_si128(sum2), _mm256_extracti128_si256(sum2, 1)), shift));
+
+      _mm_store_si128((__m128i *__restrict) out.addrFinalOut(outCore, filter), endRes);
+    }
+  }
+};
+
+
+template<> template<int in_D, int s_h, int s_w,int o_i,int o_j>   void Conv2D<int16_t>::simd_conv2d_3x3_s_g1_d_core(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel) {
+  constexpr int im_nb     = 0;
+  const int     shift     = kernel.quantizer + m_q;
+  const int     nb_filters{ kernel.dims()[2] };
+  const int     in_H{ A.dims()[1] };
+  const int     in_W{ A.dims()[2] };
+  constexpr int ihalf_size = 1;
+  constexpr int           start_h{ ihalf_size };
+  constexpr int           start_w{ ihalf_size };
+
+#if DEBUG_SIMD && __AVX512F__
+  if (in_D >= 16)
+  {
+    std::cout << "\n[WARN] suboptimal SIMD8 version conv simd8_conv2d_3x3_s_g1_d inD=" << in_D << " outD=" << nb_filters << " s=[" << s_w << ' ' << s_h << "]  " << in_H << 'x'
+              << in_W << " " << in_D * kernel.dims()[0] * kernel.dims()[1] * nb_filters * (in_H / s_h) * (in_W / s_w) / 1000 << " kMAC" << std::endl;
+  }
+#endif
+#if DEBUG_PATH
+  std::cout<<__PRETTY_FUNCTION__<<std::endl;
+#endif
+  constexpr int N_way = 8;
+  {
+    const int remainingFilterRoundsCnt = ((nb_filters) % N_way);
+    const int remainingFilterRoundsStart = (nb_filters / N_way) * N_way;
+
+    if (nb_filters >= N_way)
+    {
+      if (remainingFilterRoundsCnt != 0)
+      {
+        for (int im_i = start_h  + s_h/2 ; im_i < in_H - start_h; im_i += s_h)
+        {
+          for (int im_j = start_w  + s_w/2 ; im_j < in_W - start_w; im_j += s_w)
+          {
+            const auto outCore  = m_out.addrCore(im_nb, (im_i -o_i)/ s_h, (im_j - o_j )/ s_w);
+
+            simd_conv2d_3x3_s_d_N_way<N_way, in_D>(0, remainingFilterRoundsStart, shift, A, kernel, m_out, im_i, im_j, outCore);
+            simd_conv2d_3x3_s_d_N_way<1, in_D>(remainingFilterRoundsStart, nb_filters, shift, A, kernel, m_out, im_i, im_j, outCore);
+          }
+        }
+      }
+      else
+      {
+        for (int im_i = start_h  + s_h/2 ; im_i < in_H - start_h; im_i += s_h)
+        {
+          for (int im_j = start_w  + s_w/2 ; im_j < in_W - start_w; im_j += s_w)
+          {
+            const auto outCore  = m_out.addrCore(im_nb, (im_i -o_i)/ s_h, (im_j - o_j )/ s_w);
+
+            simd_conv2d_3x3_s_d_N_way<N_way, in_D>(0, nb_filters, shift, A, kernel, m_out, im_i, im_j, outCore);
+          }
+        }
+      }
+    } else {
+      for (int im_i = start_h  + s_h/2 ; im_i < in_H - start_h; im_i += s_h)
+      {
+        for (int im_j = start_w  + s_w/2 ; im_j < in_W - start_w; im_j += s_w)
+        {
+          const auto outCore  = m_out.addrCore(im_nb, (im_i -o_i)/ s_h, (im_j - o_j )/ s_w);
+
+          simd_conv2d_3x3_s_d_N_way<1, in_D>(0, nb_filters, shift, A, kernel, m_out, im_i, im_j,  outCore);
+        }
+      }
+    }
+  }
+}
+
 template<> template<int in_D, int s_h, int s_w, int o_i, int o_j>
 void Conv2D<int16_t>::simd16_conv2d_3x3_in16_out16_s_g2_d(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
 {
