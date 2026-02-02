@@ -72,21 +72,90 @@ template<typename T> bool Slice<T>::apply(std::vector<Tensor<T> *> &in)
   int              end_c = m_end_c;
   
   m_out.quantizer = A.quantizer;
+  const int C_out = end_c - m_start_c;
 
   if (m_out.dims().size() == 4) {
+
+#if __AVX2__
+    if constexpr (std::is_same_v<T, int16_t>)
+    {    
+      if (C_out % 16 == 0)
+      {
+        for (int im_i = m_start_h; im_i < end_h; ++im_i)
+        {
+          for (int im_j = m_start_w; im_j < end_w; ++im_j)
+          {
+            const T* src_ptr = A.addr(im_nb, im_i, im_j, m_start_c);
+            T* dst_ptr = &m_out(im_nb, im_i - m_start_h, im_j - m_start_w, 0);
+            for (int im_d = 0; im_d < C_out; im_d += 16)
+            {
+              __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src_ptr + im_d));
+              _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst_ptr + im_d), v);
+            }
+          }
+        }
+        return true;
+      }
+      else if (C_out % 8 == 0)
+      {
+        for (int im_i = m_start_h; im_i < end_h; ++im_i)
+        {
+          for (int im_j = m_start_w; im_j < end_w; ++im_j)
+          {
+            const T* src_ptr = A.addr(im_nb, im_i, im_j, m_start_c);
+            T* dst_ptr = &m_out(im_nb, im_i - m_start_h, im_j - m_start_w, 0);
+            for (int im_d = 0; im_d < C_out; im_d += 8)
+            {
+              __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_ptr + im_d));
+              _mm_storeu_si128(reinterpret_cast<__m128i*>(dst_ptr + im_d), v);
+            }
+          }
+        }
+        return true;
+      }
+    }
+#endif // __AVX2__
     for (int im_i = m_start_h; im_i < end_h; im_i++)
     {
       for (int im_j = m_start_w; im_j < end_w; im_j++)
       {
-        for (int im_d = m_start_c; im_d < end_c; im_d++)
-        {
-          m_out(im_nb, im_i - m_start_h, im_j - m_start_w, im_d - m_start_c) = A(im_nb, im_i, im_j, im_d);
-        }
+        const T* src_ptr = A.addr(im_nb, im_i, im_j, m_start_c);
+        T* dst_ptr = &m_out(im_nb, im_i - m_start_h, im_j - m_start_w, 0);
+        std::memcpy(dst_ptr, src_ptr, C_out * sizeof(T));
       }
     }
   } else if (m_out.dims().size() == 2) {
-    for (int im_d = m_start_c; im_d < end_c; im_d++)
-      m_out(im_nb, im_d - m_start_c) = A(im_nb, im_d);
+
+#if __AVX2__
+    if constexpr (std::is_same_v<T, int16_t>)
+    {
+      if (C_out % 16 == 0)
+      {
+        const T *src_ptr = A.data() + m_start_c;
+        T       *dst_ptr = &m_out(im_nb, 0);
+        for (int c = 0; c < C_out; c += 16)
+        {
+          __m256i v = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(src_ptr + c));
+          _mm256_storeu_si256(reinterpret_cast<__m256i*>(dst_ptr + c), v);
+        }
+        return true;
+      }
+      else if (C_out % 8 == 0)
+      {
+        const T *src_ptr = A.data() + m_start_c;
+        T       *dst_ptr = &m_out(im_nb, 0);
+        for (int c = 0; c < C_out; c += 8)
+        {
+          __m128i v = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src_ptr + c));
+          _mm_storeu_si128(reinterpret_cast<__m128i*>(dst_ptr + c), v);
+        }
+        return true;
+      }
+    }
+#endif // __AVX2__
+    const T* src_ptr = A.data() + m_start_c;
+    T* dst_ptr = &m_out(im_nb, 0);
+    std::memcpy(dst_ptr, src_ptr, C_out * sizeof(T));
   } else {
     return false;
   }
