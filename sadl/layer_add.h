@@ -87,6 +87,54 @@ template<typename T> bool Add<T>::apply(std::vector<Tensor<T> *> &in)
 #if DEBUG_MODEL_ANALYZE
       std::cout << "\n[ANALYZE] add (in):\t" << m_out.size() << std::endl;
 #endif
+#if __AVX2__
+        if constexpr (std::is_same_v<T, int16_t>)
+        {
+          if (m_out.size() % 16 == 0)
+          {
+#if SATURATE_RESULT
+            const __m256i max = _mm256_set1_epi16(std::numeric_limits<int16_t>::max());
+            const __m256i min = _mm256_set1_epi16(std::numeric_limits<int16_t>::min());
+#endif
+            T*       a_ptr = m_out.data();
+            const T* b_ptr = in[1]->data();
+            for (int64_t i = 0; i < m_out.size(); i += 16, a_ptr += 16, b_ptr += 16)
+            {
+              __m256i x = _mm256_srai_epi16(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr)), shift);
+              __m256i y = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b_ptr));
+              __m256i result = _mm256_adds_epi16(x, y);
+#if SATURATE_RESULT
+              result = _mm256_min_epi16(_mm256_max_epi16(result, min), max);
+#endif
+              _mm256_store_si256(reinterpret_cast<__m256i*>(a_ptr), result);
+            }
+            return true;
+          }
+        }
+        if constexpr (std::is_same_v<T, int32_t>)
+        {
+          if (m_out.size() % 8 == 0)
+          {
+  #if SATURATE_RESULT
+            const __m256i max = _mm256_set1_epi32(std::numeric_limits<int32_t>::max());
+            const __m256i min = _mm256_set1_epi32(std::numeric_limits<int32_t>::min());
+  #endif  
+            T*       a_ptr = m_out.data();
+            const T* b_ptr = in[1]->data();
+            for (int64_t i = 0; i < m_out.size(); i += 8, a_ptr += 8, b_ptr += 8)
+            {
+              __m256i x = _mm256_srai_epi32(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr)), shift);
+              __m256i y = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b_ptr));
+              __m256i result = _mm256_add_epi32(x, y);
+  #if SATURATE_RESULT
+              result = _mm256_min_epi32(_mm256_max_epi32(result, min), max);
+  #endif
+              _mm256_store_si256(reinterpret_cast<__m256i*>(a_ptr), result);
+            }
+            return true;
+          }
+        }
+#endif
       for (auto it0 = m_out.begin(), it1 = in[1]->begin(); it0 != m_out.end(); ++it0, ++it1)
       {
         typename ComputationType<T>::type z = *it0;
@@ -242,6 +290,54 @@ template<typename T> bool Add<T>::apply(std::vector<Tensor<T> *> &in)
     {
 #if DEBUG_MODEL_ANALYZE
       std::cout << "\n[ANALYZE] add (in):\t" << m_out.size() << std::endl;
+#endif
+#if __AVX2__
+        if constexpr (std::is_same_v<T, int16_t>)
+        {
+          if (m_out.size() % 16 == 0)
+          {
+#if SATURATE_RESULT
+            const __m256i max = _mm256_set1_epi16(std::numeric_limits<int16_t>::max());
+            const __m256i min = _mm256_set1_epi16(std::numeric_limits<int16_t>::min());
+#endif
+            T*       a_ptr = m_out.data();
+            const T* b_ptr = in[1]->data();
+            for (int64_t i = 0; i < m_out.size(); i += 16, a_ptr += 16, b_ptr += 16)
+            {
+              __m256i x = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr));
+              __m256i y = _mm256_srai_epi16(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(b_ptr)), shift);
+              __m256i result = _mm256_adds_epi16(x, y);
+#if SATURATE_RESULT
+              result = _mm256_min_epi16(_mm256_max_epi16(result, min), max);
+#endif
+              _mm256_store_si256(reinterpret_cast<__m256i*>(a_ptr), result);
+            }
+            return true;
+          }
+        }
+        if constexpr (std::is_same_v<T, int32_t>)
+        {
+          if (m_out.size() % 8 == 0)
+          {
+#if SATURATE_RESULT
+            const __m256i max = _mm256_set1_epi32(std::numeric_limits<int32_t>::max());
+            const __m256i min = _mm256_set1_epi32(std::numeric_limits<int32_t>::min());
+#endif
+            T*       a_ptr = m_out.data();
+            const T* b_ptr = in[1]->data();
+            for (int64_t i = 0; i < m_out.size(); i += 8, a_ptr += 8, b_ptr += 8)
+            {
+              __m256i x = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr));
+              __m256i y = _mm256_srai_epi32(_mm256_loadu_si256(reinterpret_cast<const __m256i*>(b_ptr)), shift);
+              __m256i result = _mm256_add_epi32(x, y);
+#if SATURATE_RESULT
+              result = _mm256_min_epi32(_mm256_max_epi32(result, min), max);
+#endif
+              _mm256_store_si256(reinterpret_cast<__m256i*>(a_ptr), result);
+            }
+            return true;
+          }
+        }
 #endif
       for (auto it0 = m_out.begin(), it1 = in[1]->begin(); it0 != m_out.end(); ++it0, ++it1)
       {
