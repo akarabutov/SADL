@@ -326,43 +326,33 @@ template<> inline bool Mul<int16_t>::apply_singleton_simd16(std::vector<Tensor<i
   const Tensor<T> &B      = *in[1];
   const int         shift =  in[1]->quantizer + m_q;
   const __m256i     value = _mm256_set1_epi16(B[0]);
-#if SATURATE_RESULT
-  const __m256i     max   = _mm256_set1_epi32(32767);
-  const __m256i     min   = _mm256_set1_epi32(-32768);
-#endif
+  
+#if !SATURATE_RESULT
   const __m256i     mask  = _mm256_set1_epi32(65535);
+#endif
+
   for (int64_t k = 0; k < m_out.size(); k += 16)
   {
-    __m256i *aptr = (__m256i *) (m_out.data() + k);
-    __m256i a    = _mm256_load_si256(aptr);
+    const __m256i *aptr = (__m256i *) (m_out.data() + k);
+    const __m256i a    = _mm256_load_si256(aptr);
     // mul
-    auto lo = _mm256_mullo_epi16(a, value);
-    auto hi = _mm256_mulhi_epi16(a, value);
-    auto lo32 = _mm256_unpacklo_epi16(lo, hi);
-    auto hi32 = _mm256_unpackhi_epi16(lo, hi);
-    auto y0   = _mm256_permute2x128_si256(lo32, hi32, _MM_SHUFFLE(0, 2, 0, 0));
-    auto y1   = _mm256_permute2x128_si256(lo32, hi32, _MM_SHUFFLE(0, 3, 0, 1));
+    const __m256i lo = _mm256_mullo_epi16(a, value);
+    const __m256i hi = _mm256_mulhi_epi16(a, value);
+    const __m256i lo32 = _mm256_unpacklo_epi16(lo, hi);
+    const __m256i hi32 = _mm256_unpackhi_epi16(lo, hi);
     // shift
-    auto y0s = _mm256_srai_epi32(y0, shift);
-    auto y1s = _mm256_srai_epi32(y1, shift);
+    const __m256i sf_l = _mm256_srai_epi32(lo32, shift);
+    const __m256i sf_h = _mm256_srai_epi32(hi32, shift);
 #if SATURATE_RESULT
-    // clip
-    auto y0c  = _mm256_max_epi32(y0s, min);
-    auto y1c  = _mm256_max_epi32(y1s, min);
-    auto y0c2 = _mm256_min_epi32(y0c, max);
-    auto y1c2 = _mm256_min_epi32(y1c, max);
+    const __m256i sf16= _mm256_packs_epi32(sf_l, sf_h);
 #else
-    auto y0c2 = y0s;
-    auto y1c2 = y1s;
+    const __m256i y0p = _mm256_and_si256(sf_l, mask);
+    const __m256i y1p = _mm256_and_si256(sf_h, mask); 
+    const __m256i sf16 = _mm256_packus_epi32(y0p , y1p );
 #endif
-    // mask 16bits
-    auto y0p = _mm256_and_si256(y0c2, mask);
-    auto y1p = _mm256_and_si256(y1c2, mask);
-    // repack
-    auto z  = _mm256_packus_epi32(y0p, y1p);
-    auto z2 = _mm256_permute4x64_epi64(z, _MM_SHUFFLE(3, 1, 2, 0));
-    _mm256_store_si256(aptr, z2);
+    _mm256_store_si256((__m256i *) aptr, sf16);
   }
+
   return true;
 }
 
