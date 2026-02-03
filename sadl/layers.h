@@ -70,6 +70,7 @@
 #include "layer_depth2space.h"
 #include "layer_gather.h"
 #include "layer_gather_elements.h"
+#include "layer_global_averagepool.h"
 
 namespace sadl
 {
@@ -122,6 +123,7 @@ inline std::string opName(const OperationType::Type op)
     DIRTYCASEPRINT(Depth2Space);
     DIRTYCASEPRINT(Gather);
     DIRTYCASEPRINT(GatherElements);
+    DIRTYCASEPRINT(GlobalAveragePool);
   default:
     oss << "??";
     break;
