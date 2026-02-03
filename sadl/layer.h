@@ -85,7 +85,8 @@ struct OperationType
     Depth2Space        = 35,
     Gather             = 36,
     GatherElements     = 37,
-    OperationTypeCount = 38,
+    GlobalAveragePool  = 38,
+    OperationTypeCount = 39,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 
   };

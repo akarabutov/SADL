@@ -138,6 +138,7 @@ class OPTYPE(IntEnum):
     Depth2Space = (35,)
     Gather = (36,)
     GatherElements = (37,)
+    GlobalAveragePool = (38,)
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
     BatchMatMulV2 = 6
@@ -1730,6 +1731,14 @@ def parse_graph_node(
         ]
         myGraph[node.output[0]]["additional"]["data"] = node
         # todo: check pads?
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]
+
+    elif node.op_type == "GlobalAveragePool":
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["op_type"] = OPTYPE.GlobalAveragePool
+        myGraph[node.output[0]]["inputs"] = [map_onnx_to_myGraph[n0name]]
+        myGraph[node.output[0]]["additional"] = {}
+        myGraph[node.output[0]]["additional"]["data"] = node
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
 
     elif node.op_type == "ReduceMean":
