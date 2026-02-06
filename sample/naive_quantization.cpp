@@ -87,6 +87,7 @@ bool toQuantize(sadl::layers::OperationType::Type type)
          && type != sadl::layers::OperationType::Tile && type != sadl::layers::OperationType::Pad && type != sadl::layers::OperationType::Floor && type != sadl::layers::OperationType::Sub && type != sadl::layers::OperationType::Gather
          && type != sadl::layers::OperationType::Abs
          && type != sadl::layers::OperationType::Depth2Space
+         && type != sadl::layers::OperationType::BitShift
          && type != sadl::layers::OperationType::GatherElements;
 }
 

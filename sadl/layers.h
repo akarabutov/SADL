@@ -68,6 +68,7 @@
 #include "layer_sub.h"
 #include "layer_abs.h"
 #include "layer_depth2space.h"
+#include "layer_bitshift.h"
 #include "layer_gather.h"
 #include "layer_gather_elements.h"
 #include "layer_global_averagepool.h"
@@ -124,6 +125,7 @@ inline std::string opName(const OperationType::Type op)
     DIRTYCASEPRINT(Gather);
     DIRTYCASEPRINT(GatherElements);
     DIRTYCASEPRINT(GlobalAveragePool);
+    DIRTYCASEPRINT(BitShift);
   default:
     oss << "??";
     break;
