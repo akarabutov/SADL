@@ -139,6 +139,7 @@ class OPTYPE(IntEnum):
     Gather = (36,)
     GatherElements = (37,)
     GlobalAveragePool = (38,)
+    BitShift = (39,)
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
     BatchMatMulV2 = 6
@@ -164,10 +165,10 @@ class DTYPE_SADL(IntEnum):
 
 
 class DTYPE_ONNX(IntEnum):
-    # https://github.com/onnx/onnx/blob/master/onnx/onnx.in.proto#L483-L485
+    # https://github.com/onnx/onnx/blob/master/onnx/onnx.in.proto#L603-L659
     FLOAT = (1,)  # float
     INT8 = (3,)  # int8_t
-    INT16 = (4,)  # int16_t
+    INT16 = (5,)  # int16_t
     INT32 = (6,)  # int32_t
     INT64 = 7  # int64_t
 
@@ -1913,6 +1914,52 @@ def parse_graph_node(
         myGraph[node.output[0]]["additional"] = {}
         myGraph[node.output[0]]["additional"]["data"] = node
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
+
+    elif node.op_type == "BitShift":
+        # Bit shift operation
+        if is_constant(n0name, model_onnx.graph.initializer):
+            additional = {}
+            additional["data"] = node
+            #const_t = getAttribute("")
+            additional["dims"], additional["raw_data"], additional[
+                "dtype"
+            ] = extract_additional_data(n0name, node_annotation[n0name].to_transpose, model_onnx.graph, verbose)
+            #extract_additional_data_from_node(node, node_annotation[n0name].to_transpose)
+            map_onnx_to_myGraph[n0name] = n0name
+            myGraph[n0name] = {}
+            myGraph[n0name]["inputs"] = []
+            myGraph[n0name]["additional"] = additional
+            myGraph[n0name]["op_type"] = OPTYPE.Const
+            swap_inputs = True
+        if is_constant(node.input[1], model_onnx.graph.initializer):
+            additional = {}
+            additional["data"] = node
+            additional["dims"], additional["raw_data"], additional[
+                "dtype"
+            ] = extract_additional_data(node.input[1], node_annotation[node.input[1]].to_transpose, model_onnx.graph, verbose)
+            map_onnx_to_myGraph[node.input[1]] = node.input[1]
+            myGraph[node.input[1]] = {}
+            myGraph[node.input[1]]["inputs"] = []
+            myGraph[node.input[1]]["additional"] = additional
+            myGraph[node.input[1]]["op_type"] = OPTYPE.Const
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["op_type"] = OPTYPE.BitShift
+        #if not swap_inputs:
+        #    D1 = extract_dims(n0name, model_onnx.graph)
+        #    D2 = extract_dims(node.input[1], model_onnx.graph)
+        #    if D1 is not None and D2 is not None and len(D1) < len(D2):
+        #        swap_inputs = True
+
+        myGraph[node.output[0]]["inputs"] = [
+            map_onnx_to_myGraph[n0name],
+            map_onnx_to_myGraph[node.input[1]],
+        ]
+        myGraph[node.output[0]]["additional"] = {}
+        myGraph[node.output[0]]["additional"]["data"] = node
+        a = getAttribute(node, "direction")
+        myGraph[node.output[0]]["additional"]["direction"] = 1 if (a.s.decode("utf-8") == "RIGHT") else 0
+        
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]  
         
     elif node.op_type == "DepthToSpace":
         inputs, additional = [], {}
@@ -2381,6 +2428,11 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
                     print("#\t block size", node["additional"]["blocksize"])
                 f.write(struct.pack("i", int(node["additional"]["blocksize"])))
                 
+            elif node["op_type"] == OPTYPE.BitShift:
+                if verbose:
+                    print("#\t direction", node["additional"]["direction"])
+                f.write(struct.pack("i", int(node["additional"]["direction"])))
+
             elif node["op_type"] == OPTYPE.Gather:
                 if verbose:
                     print("#\t axis", node["additional"]["axis"])

@@ -129,6 +129,7 @@ template<typename T> bool copy(const sadl::layers::Layer<float> &layer, sadl::la
   case sadl::layers::OperationType::Abs: 
     break;
   case sadl::layers::OperationType::Depth2Space: 
+  case sadl::layers::OperationType::BitShift: 
     dynamic_cast<sadl::layers::Depth2Space<T> &>(layerQ).blocksize=dynamic_cast<const sadl::layers::Depth2Space<float> &>(layer).blocksize;
     break;    
   case sadl::layers::OperationType::Gather: 

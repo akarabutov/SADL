@@ -3,16 +3,28 @@ SPATH=$(dirname $(realpath ${BASH_SOURCE[0]}));
 BDIR=$(realpath $SPATH);
 
 BLACKHOLE=" /dev/null";
+USE_ONNXRUNTIME=1
 # BLACKHOLE=" /dev/stdin";
 
-if [ $# != 1 -a $# != 2 ]; then
- echo "[ERROR] utest.sh model.onnx [--no_transpose]"
+if [ $# != 1 -a $# != 2 -a $# != 3 ]; then
+ echo "[ERROR] utest.sh model.onnx [--no_transpose] [--no_onnxruntime]"
  exit -1;
 fi;
 OPT="";
-if [ $# == 2 ]; then
- OPT="$2";
+if [ $# == 2 ] || [ $# == 3 ]; then
+ if [ "$2" = "--no_onnxruntime" ]; then
+  USE_ONNXRUNTIME=0
+ else
+  OPT="$2";
+ fi;
+ if [ "$3" = "--no_onnxruntime" ]; then
+  USE_ONNXRUNTIME=0
+ else
+  OPT="$3";
+ fi;
 fi;
+
+
  
 if [ ! -f ${1} ]; then
  echo "[ERROR] no file $1"
@@ -24,14 +36,17 @@ OPT2="--input_default_value=8"; # for graph with named inputs
 NAME=$(basename $1);
 BNAME=${NAME/.onnx/};
 
-rm -f ${BNAME}.results;
-python3 ${BDIR}/onnx_inference.py --input_onnx $1 --output ${BNAME}.results $OPT $OPT2 > $BLACKHOLE
-if [ ! -f ${BNAME}.results ]; then
- echo " [ERROR] onnx inference failed for ${BNAME}";
- exit -1;
+if [ USE_ONNXRUNTIME == 1 ]; then
+  rm -f ${BNAME}.results;
+  python3 ${BDIR}/onnx_inference.py --input_onnx $1 --output ${BNAME}.results $OPT $OPT2 > $BLACKHOLE
+  if [ ! -f ${BNAME}.results ]; then
+  echo " [ERROR] onnx inference failed for ${BNAME}";
+  exit -1;
+  fi
 fi
 
 rm -f ${BNAME}.sadl;
+echo "python3 ${BDIR}/../converter/main.py --input_onnx $1  --output ${BNAME}.sadl $OPT2 > $BLACKHOLE"
 python3 ${BDIR}/../converter/main.py --input_onnx $1  --output ${BNAME}.sadl $OPT2 > $BLACKHOLE
 if [ ! -f ${BNAME}.sadl ]; then
  echo " [ERROR] onnx to SADL conversion failed for ${BNAME}";

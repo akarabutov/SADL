@@ -50,6 +50,11 @@ for F in $L; do
   ../utest.sh ../models/${F}.onnx;
 done
 
+L="bitshift_LEFT__INT16 bitshift_RIGHT__INT16 bitshift_LEFT__FLOAT bitshift_RIGHT__FLOAT"
+for F in $L; do
+  ../utest.sh ../models/${F}.onnx --no_onnxruntime
+done
+
 # experimental testing only
 LEXP="";
 for F in $LEXP; do
