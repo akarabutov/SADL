@@ -72,6 +72,7 @@
 #include "layer_gather.h"
 #include "layer_gather_elements.h"
 #include "layer_global_averagepool.h"
+#include "layer_clip.h"
 
 namespace sadl
 {
@@ -126,6 +127,7 @@ inline std::string opName(const OperationType::Type op)
     DIRTYCASEPRINT(GatherElements);
     DIRTYCASEPRINT(GlobalAveragePool);
     DIRTYCASEPRINT(BitShift);
+    DIRTYCASEPRINT(Clip);
   default:
     oss << "??";
     break;

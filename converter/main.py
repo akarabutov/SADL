@@ -140,6 +140,7 @@ class OPTYPE(IntEnum):
     GatherElements = (37,)
     GlobalAveragePool = (38,)
     BitShift = (39,)
+    Clip = (40,)
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
     BatchMatMulV2 = 6
@@ -599,6 +600,14 @@ def add_transpose_to_output(node, myGraph, map_onnx_to_myGraph):
     map_onnx_to_myGraph[node.output[0]] = nname
     return nname
 
+def find_init_vals_in_graph(graph, data_name):
+    ans = list()
+    for node in graph.initializer:
+        if data_name in node.name:
+            ans.append(node)
+    return ans 
+
+
 
 def parse_graph_node(
     node, model_onnx, myGraph, node_annotation, map_onnx_to_myGraph, verbose, force_transpose_constant_tensor_dim4
@@ -645,7 +654,25 @@ def parse_graph_node(
             n1name = node.input[1]
         else:
             n1name = None
-
+    if (
+        len(node.input) > 2
+        and node_annotation[node.name].transpose_before_in1 is not None
+    ):  # layout_onnx == 'nchw' : # need to go back to original layout before process
+        n2name = add_transpose_to_input(
+            node,
+            node_annotation[node.name].transpose_before_in1,
+            2,
+            myGraph,
+            model_onnx,
+            node_annotation,
+            map_onnx_to_myGraph,
+        )
+    else:
+        if len(node.input) >= 3:
+            n2name = node.input[2]
+        else:
+            n2name = None
+            
     if (
         node.op_type == "Conv"
         or node.op_type == "Gemm"
@@ -1906,6 +1933,83 @@ def parse_graph_node(
         myGraph[node.output[0]]["additional"] = {}
         myGraph[node.output[0]]["additional"]["data"] = node
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
+        
+    elif node.op_type == "Clip":
+        # Clip operation
+        min_v = None
+        max_v = None
+        assert(len(node.input) in [1,3])
+        
+        if len(node.input) == 1:
+            n1name = f"{node.name}_min"
+            n2name = f"{node.name}_max"
+
+        myGraph[n1name] = {}
+        myGraph[n1name]["op_type"] = OPTYPE.Const
+        myGraph[n1name]["inputs"] = []
+        additional = dict()
+        if len(node.input) == 1:
+            min_v = getAttribute(node, "min").f
+            min_v = 0 if min_v is None else min_v
+            const_t = onnx.numpy_helper.from_array(np.asarray([min_v], dtype=np.float32), "min")
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data_from_node(const_t, False)
+        else:
+            additional = {}
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data(
+                n1name, False, model_onnx.graph, verbose
+            )            
+        additional['data'] = node
+        myGraph[n1name]["additional"] = additional
+
+        myGraph[n2name] = {}
+        myGraph[n2name]["op_type"] = OPTYPE.Const
+        myGraph[n2name]["inputs"] = []
+        additional = dict()
+        if len(node.input) == 1:            
+            max_v = getAttribute(node, "max").f
+            max_v = 0 if max_v is None else max_v
+            const_t = onnx.numpy_helper.from_array(np.asarray([max_v], dtype=np.float32), "max")
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data_from_node(const_t, False)
+        else:
+            additional = {}
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data(
+                n2name, False, model_onnx.graph, verbose
+            )                     
+        additional['data'] = node
+        myGraph[n2name]["additional"] = additional            
+
+        map_onnx_to_myGraph[n1name] = n1name
+        map_onnx_to_myGraph[n2name] = n2name
+
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["op_type"] = OPTYPE.Clip
+        myGraph[node.output[0]]["inputs"] = [
+            map_onnx_to_myGraph[n0name],
+            map_onnx_to_myGraph[n1name],
+            map_onnx_to_myGraph[n2name]
+        ]
+        additional = {}
+        additional['data'] = node
+        myGraph[node.output[0]]["additional"] = additional
+       
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]       
+
 
     elif node.op_type == "Abs":
         myGraph[node.output[0]] = {}
