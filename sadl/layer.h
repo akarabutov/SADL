@@ -87,7 +87,8 @@ struct OperationType
     GatherElements     = 37,
     GlobalAveragePool  = 38,
     BitShift           = 39,
-    OperationTypeCount = 40,
+    Clip               = 40,
+    OperationTypeCount = 41,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 
   };

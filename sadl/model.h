@@ -230,6 +230,9 @@ template<typename T> std::unique_ptr<layers::Layer<T>> createLayer(int32_t id, l
   case layers::OperationType::GlobalAveragePool:
     return std::unique_ptr<layers::Layer<T>>(new layers::GlobalAveragePool<T>{ id, op });
     break;
+  case layers::OperationType::Clip:
+    return std::unique_ptr<layers::Layer<T>>(new layers::Clip<T>{ id, op });
+    break;
   case layers::OperationType::OperationTypeCount:
     std::cerr << "[ERROR] unknown layer " << op << std::endl;
     exit(-1);
