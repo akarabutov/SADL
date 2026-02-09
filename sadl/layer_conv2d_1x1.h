@@ -50,92 +50,120 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_1x1_s_dis
 #define CONV_MOD8 simd8_conv2d_1x1_s_d
 #define CONV_MOD16 simd16_conv2d_1x1_s_d
 #define CONV_MOD32 simd32_conv2d_1x1_s_d
+#define CONV_OUT32 simd32_out32_conv2d_1x1_s
+#define CONV_OUT16_D2 simd16_out16_conv2d_1x1_s_d2
+#define CONV_OUT16_D1 simd16_out16_conv2d_1x1_s_d1
 #else
 #define CONV_MOD8 conv2d_1x1_s_d
 #define CONV_MOD16 conv2d_1x1_s_d
 #define CONV_MOD32 conv2d_1x1_s_d
+#define CONV_OUT32 conv2d_1x1_s
+#define CONV_OUT16_D2 conv2d_1x1_s
+#define CONV_OUT16_D1 conv2d_1x1_s
 #endif
 
   const int in_D{ A.dims()[3] };
-  switch (in_D)
+  const int nb_filters{ kernel.dims()[2] };
+  if(transformedKernel.size() != 0)
   {
-  case 1:
-    conv2d_1x1_s_d<1, s_h, s_w>(A, kernel);
-    break;
-  case 2:
-    conv2d_1x1_s_d<2, s_h, s_w>(A, kernel);
-    break;
-  case 4:
-    conv2d_1x1_s_d<4, s_h, s_w>(A, kernel);
-    break;
-  case 6:
-    conv2d_1x1_s_d<6, s_h, s_w>(A, kernel);
-    break;
-  case 34:
-    conv2d_1x1_s_d<34, s_h, s_w>(A, kernel);
-    break;
-  case 8:
-    CONV_MOD8<8, s_h, s_w>(A, kernel);
-    break;
-  case 16:
-    CONV_MOD16<16, s_h, s_w>(A, kernel);
-    break;
-  case 24:
-    CONV_MOD8<24, s_h, s_w>(A, kernel);
-    break;
-  case 32:
-    CONV_MOD32<32, s_h, s_w>(A, kernel);
-    break;
-  case 48:
-    CONV_MOD16<48, s_h, s_w>(A, kernel);
-    break;
-  case 64:
-    CONV_MOD32<64, s_h, s_w>(A, kernel);
-    break;
-  case 72:
-    // better do 64 and than 8
-    CONV_MOD8<72, s_h, s_w>(A, kernel);
-    break;
-  case 96:
-    CONV_MOD32<96, s_h, s_w>(A, kernel);
-    break;
-  case 112:
-    CONV_MOD16<112, s_h, s_w>(A, kernel);
-    break;
-  case 128:
-    CONV_MOD32<128, s_h, s_w>(A, kernel);
-    break;
-  case 144:
-    CONV_MOD16<144, s_h, s_w>(A, kernel);
-    break;
-  case 160:
-    CONV_MOD32<160, s_h, s_w>(A, kernel);
-    break;
-  case 176:
-    CONV_MOD16<176, s_h, s_w>(A, kernel);
-    break;
-  case 192:
-    CONV_MOD32<192, s_h, s_w>(A, kernel);
-    break;
-  case 272:
-    CONV_MOD16<272, s_h, s_w>(A, kernel);
-    break;
-  case 288:
-    CONV_MOD32<288, s_h, s_w>(A, kernel);
-    break;
-  case 384:
-    CONV_MOD32<384, s_h, s_w>(A, kernel);
-    break;
-  case 480:
-    CONV_MOD32<480, s_h, s_w>(A, kernel);
-    break;
-  default:
-    conv2d_1x1_s<s_h, s_w>(A, kernel);
-    break;
+      if(in_D % 2 == 0){
+          if(nb_filters % 32 == 0)
+             CONV_OUT32<s_h, s_w>(A, kernel);
+          else if(nb_filters % 16 == 0)
+             CONV_OUT16_D2<s_h, s_w>(A, kernel);
+      }
+      else{
+             CONV_OUT16_D1<s_h, s_w>(A, kernel);
+      }
+  }
+  else
+  {
+    switch (in_D)
+    {
+    case 1:
+      conv2d_1x1_s_d<1, s_h, s_w>(A, kernel);
+      break;
+    case 2:
+      conv2d_1x1_s_d<2, s_h, s_w>(A, kernel);
+      break;
+    case 4:
+      conv2d_1x1_s_d<4, s_h, s_w>(A, kernel);
+      break;
+    case 6:
+      conv2d_1x1_s_d<6, s_h, s_w>(A, kernel);
+      break;
+    case 17:
+      conv2d_1x1_s_d<17, s_h, s_w>(A, kernel);
+      break;
+    case 34:
+      conv2d_1x1_s_d<34, s_h, s_w>(A, kernel);
+      break;
+    case 8:
+      CONV_MOD8<8, s_h, s_w>(A, kernel);
+      break;
+    case 16:
+      CONV_MOD16<16, s_h, s_w>(A, kernel);
+      break;
+    case 24:
+      CONV_MOD8<24, s_h, s_w>(A, kernel);
+      break;
+    case 32:
+      CONV_MOD32<32, s_h, s_w>(A, kernel);
+      break;
+    case 48:
+      CONV_MOD16<48, s_h, s_w>(A, kernel);
+      break;
+    case 64:
+      CONV_MOD32<64, s_h, s_w>(A, kernel);
+      break;
+    case 72:
+      // better do 64 and than 8
+      CONV_MOD8<72, s_h, s_w>(A, kernel);
+      break;
+    case 96:
+      CONV_MOD32<96, s_h, s_w>(A, kernel);
+      break;
+    case 112:
+      CONV_MOD16<112, s_h, s_w>(A, kernel);
+      break;
+    case 128:
+      CONV_MOD32<128, s_h, s_w>(A, kernel);
+      break;
+    case 144:
+      CONV_MOD16<144, s_h, s_w>(A, kernel);
+      break;
+    case 160:
+      CONV_MOD32<160, s_h, s_w>(A, kernel);
+      break;
+    case 176:
+      CONV_MOD16<176, s_h, s_w>(A, kernel);
+      break;
+    case 192:
+      CONV_MOD32<192, s_h, s_w>(A, kernel);
+      break;
+    case 272:
+      CONV_MOD16<272, s_h, s_w>(A, kernel);
+      break;
+    case 288:
+      CONV_MOD32<288, s_h, s_w>(A, kernel);
+      break;
+    case 384:
+      CONV_MOD32<384, s_h, s_w>(A, kernel);
+      break;
+    case 480:
+      CONV_MOD32<480, s_h, s_w>(A, kernel);
+      break;
+    default:
+      conv2d_1x1_s<s_h, s_w>(A, kernel);
+      break;
+    }
   }
 #undef CONV_MOD8
 #undef CONV_MOD16
 #undef CONV_MOD32
+#undef CONV_OUT32
+#undef CONV_OUT16_D1
+#undef CONV_OUT16_D2
 }
 
 template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_1x1_s(const Tensor<T> &A, const Tensor<T> &kernel)
@@ -390,6 +418,8 @@ template<> template<int in_D, int s_h, int s_w> void Conv2D<int16_t>::simd8_conv
   }
 }
 
+
+
 template<> template<int in_D, int s_h, int s_w> void Conv2D<int16_t>::simd16_conv2d_1x1_s_d(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
 {
   using T = int16_t;
@@ -443,9 +473,266 @@ template<> template<int in_D, int s_h, int s_w> void Conv2D<int16_t>::simd16_con
   }  
 }
 
+template<> template<int s_h, int s_w> void  inline Conv2D<int16_t>::simd16_out16_conv2d_1x1_s_d2(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
+{
+  const int     in_H{ A.dims()[1] };
+  const int     in_W{ A.dims()[2] };
+  const int     in_D{ A.dims()[3] };
+  const int     nb_filters{ kernel.dims()[2] };
+  constexpr int half_size_h{ 0 };
+  constexpr int half_size_w{ 0 };
+  assert(m_pads[0]==0);
+  assert(m_pads[1]==0);
+  constexpr int     top{ 0 };
+  constexpr int     left{ 0 };
+  constexpr int     start_h{ half_size_h - top };
+  constexpr int     start_w{ half_size_w - left };
+  constexpr int  N = 8, hN = 4;
+  assert(nb_filters % 16 == 0);
+  assert(in_D % 2 == 0);
+  assert(transformedKernel.size() != 0);
+#if DEBUG_SIMD && __AVX512BW__
+  if (in_D >= 32)
+  {
+    std::cout << "\n[WARN] suboptimal SIMD16 version simd16_conv2d_1x1_s_d inD=" << in_D << " outD=" << nb_filters << " s=[" << s_w << ' ' << s_h << "]  " << in_H << 'x'
+              << in_W << " " << in_D * kernel.dims()[0] * kernel.dims()[1] * nb_filters * (in_H / s_h) * (in_W / s_w) / 1000 << " kMAC" << std::endl;
+  }
+#endif
+#if DEBUG_PATH
+  std::cout<<__PRETTY_FUNCTION__<<std::endl;
+#endif
+#if !SATURATE_RESULT
+  const __m256i mask  = _mm256_set1_epi32(65535);
+#endif
+  constexpr int im_nb = 0;
+  const int  shift = kernel.quantizer + m_q;
+
+  for (int im_i = start_h; im_i < in_H; im_i += s_h)
+  {
+    for (int im_j = start_w; im_j < in_W; im_j += s_w)
+    {
+      const int16_t* a_base = A.addr(im_nb, im_i, im_j, 0);
+      const int16_t* k_base = transformedKernel.addr(0, 0, 0, 0);
+      for (int filter = 0; filter < nb_filters; filter += 16)
+      {
+        __m256i s_lo = _mm256_setzero_si256();
+        __m256i s_hi = _mm256_setzero_si256();
+        int filter_d = 0;
+        __m256i k[N], v[hN];
+        for (; filter_d < in_D - N + 1; filter_d+=N)
+        {
+            for (int i=0; i < N; i += 2)
+            {
+                auto* k_addr = k_base + (filter_d + i) * nb_filters + filter * 2;
+                k[i] = _mm256_load_si256((const __m256i*)(k_addr));
+                k[i+1] = _mm256_load_si256((const __m256i*)(k_addr + 16));
+                v[i>>1] = _mm256_set1_epi32(*(const int32_t*)(a_base + filter_d + i));
+            }
+            for (int i=0; i < N; i += 2)
+            {
+                const __m256i mad0 = _mm256_madd_epi16(k[i], v[i>>1]);
+                const __m256i mad1 = _mm256_madd_epi16(k[i+1], v[i>>1]);
+                s_lo               = _mm256_add_epi32(s_lo, mad0);
+                s_hi               = _mm256_add_epi32(s_hi, mad1);
+            }
+        }
+        for (; filter_d < in_D; filter_d+=2)
+        {
+            auto* k_addr = k_base + filter_d * nb_filters + filter * 2;
+            const __m256i k0 = _mm256_load_si256((const __m256i*)(k_addr));
+            const __m256i k1 = _mm256_load_si256((const __m256i*)(k_addr + 16));
+            const __m256i v0 = _mm256_set1_epi32(*(const int32_t*)(a_base + filter_d));
+            const __m256i mad0 = _mm256_madd_epi16(k0, v0);
+            const __m256i mad1 = _mm256_madd_epi16(k1, v0);
+            s_lo               = _mm256_add_epi32(s_lo, mad0);
+            s_hi               = _mm256_add_epi32(s_hi, mad1);
+        }
+        s_lo = _mm256_srai_epi32(s_lo, shift);
+        s_hi = _mm256_srai_epi32(s_hi, shift);
+
+#if SATURATE_RESULT
+        const __m256i sf16= _mm256_permute4x64_epi64(_mm256_packs_epi32(s_lo, s_hi), 0xD8);
+#else
+        const __m256i y0p = _mm256_and_si256(s_lo, mask);
+        const __m256i y1p = _mm256_and_si256(s_hi, mask);
+        const __m256i sf16= _mm256_permute4x64_epi64(_mm256_packus_epi32(y0p , y1p), 0xD8);
+#endif
+        _mm256_store_si256((__m256i *) m_out.addr(im_nb, im_i / s_h, im_j / s_w, filter), sf16 );
+      }
+    }
+  }
+}
+
+template<> template<int s_h, int s_w> void  inline Conv2D<int16_t>::simd16_out16_conv2d_1x1_s_d1(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
+{
+  const int     in_H{ A.dims()[1] };
+  const int     in_W{ A.dims()[2] };
+  const int     in_D{ A.dims()[3] };
+  const int     nb_filters{ kernel.dims()[2] };
+  constexpr int half_size_h{ 0 };
+  constexpr int half_size_w{ 0 };
+  assert(m_pads[0]==0);
+  assert(m_pads[1]==0);
+  constexpr int     top{ 0 };
+  constexpr int     left{ 0 };
+  constexpr int     start_h{ half_size_h - top };
+  constexpr int     start_w{ half_size_w - left };
+  constexpr int  N = 8;
+  assert(nb_filters % 16 == 0);
+  assert(transformedKernel.size() != 0);
+#if DEBUG_SIMD && __AVX512BW__
+  if (in_D >= 32)
+  {
+    std::cout << "\n[WARN] suboptimal SIMD16 version simd16_conv2d_1x1_s_d inD=" << in_D << " outD=" << nb_filters << " s=[" << s_w << ' ' << s_h << "]  " << in_H << 'x'
+              << in_W << " " << in_D * kernel.dims()[0] * kernel.dims()[1] * nb_filters * (in_H / s_h) * (in_W / s_w) / 1000 << " kMAC" << std::endl;
+  }
+#endif
+#if DEBUG_PATH
+  std::cout<<__PRETTY_FUNCTION__<<std::endl;
+#endif
+#if !SATURATE_RESULT
+  const __m256i mask  = _mm256_set1_epi32(65535);
+#endif
+  constexpr int im_nb = 0;
+  const int  shift = kernel.quantizer + m_q;
+
+  for (int im_i = start_h; im_i < in_H; im_i += s_h)
+  {
+    for (int im_j = start_w; im_j < in_W; im_j += s_w)
+    {
+      const int16_t* a_base = A.addr(im_nb, im_i, im_j, 0);
+      const int16_t* k_base = transformedKernel.addr(0, 0, 0, 0);
+      for (int filter = 0; filter < nb_filters; filter += 16)
+      {
+        __m256i s_lo = _mm256_setzero_si256();
+        __m256i s_hi = _mm256_setzero_si256();
+        int filter_d = 0;
+        __m256i k[N], v[N];
+        for (; filter_d < in_D - N + 1; filter_d+=N)
+        {
+            for (int i = 0; i < N; i ++)
+            {
+                k[i] = _mm256_load_si256((const __m256i*)(k_base + (filter_d + i) * nb_filters + filter));
+                v[i] = _mm256_set1_epi16(*(const int16_t*)(a_base + filter_d + i));
+            }
+            for (int i = 0; i < N; i ++)
+            {
+                const __m256i mul0_hi = _mm256_mulhi_epi16(k[i], v[i]);
+                const __m256i mul0_lo = _mm256_mullo_epi16(k[i], v[i]);
+
+                const __m256i mul0_up_lo = _mm256_unpacklo_epi16(mul0_lo, mul0_hi);
+                const __m256i mul0_up_hi = _mm256_unpackhi_epi16(mul0_lo, mul0_hi);
+                s_lo                = _mm256_add_epi32(s_lo, mul0_up_lo);
+                s_hi                = _mm256_add_epi32(s_hi, mul0_up_hi);
+            }
+        }
+        for (; filter_d < in_D; filter_d++)
+        {
+            const __m256i k0 = _mm256_load_si256((const __m256i*)(k_base + filter_d * nb_filters + filter));
+            const __m256i v0 = _mm256_set1_epi16(*(const int16_t*)(a_base + filter_d));
+            const __m256i mul0_hi = _mm256_mulhi_epi16(k0, v0);
+            const __m256i mul0_lo = _mm256_mullo_epi16(k0, v0);
+
+            const __m256i mul0_up_lo = _mm256_unpacklo_epi16(mul0_lo, mul0_hi);
+            const __m256i mul0_up_hi = _mm256_unpackhi_epi16(mul0_lo, mul0_hi);
+            s_lo                = _mm256_add_epi32(s_lo, mul0_up_lo);
+            s_hi                = _mm256_add_epi32(s_hi, mul0_up_hi);
+        }
+        s_lo = _mm256_srai_epi32(s_lo, shift);
+        s_hi = _mm256_srai_epi32(s_hi, shift);
+#if SATURATE_RESULT
+        const __m256i sf16= _mm256_packs_epi32(s_lo, s_hi);
+#else
+        const __m256i y0p = _mm256_and_si256(s_lo, mask);
+        const __m256i y1p = _mm256_and_si256(s_hi, mask);
+        const __m256i sf16= _mm256_packus_epi32(y0p , y1p);
+#endif
+        _mm256_store_si256((__m256i *) m_out.addr(im_nb, im_i / s_h, im_j / s_w, filter), sf16 );
+      }
+    }
+  }
+}
 
 
 #if __AVX512BW__
+
+template<> template<int s_h, int s_w> void  inline Conv2D<int16_t>::simd32_out32_conv2d_1x1_s(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
+{
+  const int     in_H{ A.dims()[1] };
+  const int     in_W{ A.dims()[2] };
+  const int     in_D{ A.dims()[3] };
+  const int     nb_filters{ kernel.dims()[2] };
+  constexpr int half_size_h{ 0 };
+  constexpr int half_size_w{ 0 };
+  assert(m_pads[0]==0);
+  assert(m_pads[1]==0);
+  constexpr int     top{ 0 };
+  constexpr int     left{ 0 };
+  constexpr int     start_h{ half_size_h - top };
+  constexpr int     start_w{ half_size_w - left };
+  constexpr int  N = 8, hN = 4;
+  assert(nb_filters % 32 == 0);
+  assert(in_D % 2 == 0);
+  assert(transformedKernel.size() != 0);
+  constexpr int im_nb = 0;
+  const int     shift = kernel.quantizer + m_q;
+#if DEBUG_PATH
+  std::cout<<__PRETTY_FUNCTION__<<std::endl;
+#endif
+  for (int im_i = start_h; im_i < in_H; im_i += s_h)
+  {
+    for (int im_j = start_w; im_j < in_W; im_j += s_w)
+    {
+      const int16_t* a_base = A.addr(im_nb, im_i, im_j, 0);
+      const int16_t* k_base = transformedKernel.addr(0, 0, 0, 0);
+      for (int filter = 0; filter < nb_filters; filter += 32)
+      {
+        __m512i s_lo = _mm512_setzero_si512();
+        __m512i s_hi = _mm512_setzero_si512();
+        int filter_d = 0;
+        __m512i k[N], v[hN];
+        for (; filter_d < in_D - N + 1; filter_d+=N)
+        {
+            for (int i=0; i < N; i += 2)
+            {
+                auto* k_addr = k_base + (filter_d + i) * nb_filters + filter * 2;
+                k[i] = _mm512_load_si512((const __m512i*)(k_addr));
+                k[i+1] = _mm512_load_si512((const __m512i*)(k_addr + 32));
+                v[i>>1] = _mm512_set1_epi32(*(const int32_t*)(a_base + filter_d + i));
+            }
+            for (int i=0; i < N; i += 2)
+            {
+                const __m512i mad0 = _mm512_madd_epi16(k[i], v[i>>1]);
+                const __m512i mad1 = _mm512_madd_epi16(k[i+1], v[i>>1]);
+                s_lo               = _mm512_add_epi32(s_lo, mad0);
+                s_hi               = _mm512_add_epi32(s_hi, mad1);
+            }
+        }
+        for (; filter_d < in_D; filter_d+=2)
+        {
+            auto* k_addr = k_base + filter_d * nb_filters + filter * 2;
+            const __m512i k0 = _mm512_load_si512((const __m512i*)(k_addr));
+            const __m512i k1 = _mm512_load_si512((const __m512i*)(k_addr + 32));
+            const __m512i v0 = _mm512_set1_epi32(*(const int32_t*)(a_base + filter_d));
+            const __m512i mad0 = _mm512_madd_epi16(k0, v0);
+            const __m512i mad1 = _mm512_madd_epi16(k1, v0);
+            s_lo               = _mm512_add_epi32(s_lo, mad0);
+            s_hi               = _mm512_add_epi32(s_hi, mad1);
+        }
+#if SATURATE_RESULT
+        __m256i r_lo = _mm512_cvtsepi32_epi16(_mm512_srai_epi32(s_lo, shift));
+        __m256i r_hi = _mm512_cvtsepi32_epi16(_mm512_srai_epi32(s_hi, shift));
+#else
+        __m256i r_lo = _mm512_cvtsepi32_epu16(_mm512_srai_epi32(s_lo, shift));
+        __m256i r_hi = _mm512_cvtsepi32_epu16(_mm512_srai_epi32(s_hi, shift));
+#endif
+        _mm256_store_si256((__m256i *) m_out.addr(im_nb, im_i / s_h, im_j / s_w, filter), r_lo );
+        _mm256_store_si256((__m256i *) m_out.addr(im_nb, im_i / s_h, im_j / s_w, filter + 16), r_hi );
+      }
+    }
+  }
+}
+
 template<> template<int in_D, int s_h, int s_w> void Conv2D<int16_t>::simd32_conv2d_1x1_s_d(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
 {
   static_assert(in_D % 32 == 0, "Should be used with mod32 filters.");

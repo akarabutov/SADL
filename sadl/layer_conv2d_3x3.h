@@ -540,63 +540,89 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
 {
 #if __AVX2__
 #define CONV_MOD8   simd8_conv2d_3x3_s_g1_d
-#define CONV_MOD16 simd16_conv2d_3x3_s_g1_d
-#define CONV_MOD32 simd32_conv2d_3x3_s_g1_d
+#define CONV_MOD16  simd16_conv2d_3x3_s_g1_d
+#define CONV_MOD32  simd32_conv2d_3x3_s_g1_d
+#define CONV_OUT8   simd16_conv2d_out8_3x3_s_g1_d
+#define CONV_OUT16  simd16_conv2d_out16_3x3_s_g1_d
 #else
 #define CONV_MOD8 conv2d_3x3_s_g1_d_core
 #define CONV_MOD16 conv2d_3x3_s_g1_d_core
 #define CONV_MOD32 conv2d_3x3_s_g1_d_core
+#define CONV_OUT8 conv2d_3x3_s_g1_d_core
+#define CONV_OUT16 conv2d_3x3_s_g1_d_core
 #endif
   const int in_D{ A.dims()[3] };
-
-  switch (in_D)
+  const int nb_filters{ kernel.dims()[2] };
+  if(transformedKernel.size() == 0)
   {
-  case 1:
-    conv2d_3x3_s_g1_d_core<1, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 2:
-    conv2d_3x3_s_g1_d_core<2, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 4:
-    conv2d_3x3_s_g1_d_core<4, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 6:
-    conv2d_3x3_s_g1_d_core<6, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 8:
-    CONV_MOD8<8, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 16:
-    CONV_MOD16<16, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 24:
-    CONV_MOD8<24, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 32:
-    CONV_MOD32<32, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 48:
-    CONV_MOD16<48, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 64:
-    CONV_MOD32<64, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 72:
-    CONV_MOD8<72, s_h, s_w, o_i, o_j>(A, kernel);   // better do 64 and than 8
-    break;
-  case 96:
-    CONV_MOD32<96, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  case 128:
-    CONV_MOD32<128, s_h, s_w, o_i, o_j>(A, kernel);
-    break;
-  default:
-    conv2d_3x3_s_g1_core<s_h, s_w, o_i, o_j>(A, kernel);
-    break;
+      switch (in_D)
+      {
+        case 6:
+          if(nb_filters % 16 == 0)
+              CONV_OUT16<6, s_h, s_w, o_i, o_j>(A, kernel);
+          else if(nb_filters % 8 == 0)
+              CONV_OUT8<6, s_h, s_w, o_i, o_j>(A, kernel);
+          else
+              conv2d_3x3_s_g1_core<s_h, s_w, o_i, o_j>(A, kernel);
+          break;
+        default:
+          conv2d_3x3_s_g1_core<s_h, s_w, o_i, o_j>(A, kernel);
+          break;
+      }
+  }
+  else
+  {
+    switch (in_D)
+    {
+    case 1:
+      conv2d_3x3_s_g1_d_core<1, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 2:
+      conv2d_3x3_s_g1_d_core<2, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 4:
+      conv2d_3x3_s_g1_d_core<4, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 6:
+      conv2d_3x3_s_g1_d_core<6, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 8:
+      CONV_MOD8<8, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 16:
+      CONV_MOD16<16, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 24:
+      CONV_MOD8<24, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 32:
+      CONV_MOD32<32, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 48:
+      CONV_MOD16<48, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 64:
+      CONV_MOD32<64, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 72:
+      CONV_MOD8<72, s_h, s_w, o_i, o_j>(A, kernel);   // better do 64 and than 8
+      break;
+    case 96:
+      CONV_MOD32<96, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    case 128:
+      CONV_MOD32<128, s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    default:
+      conv2d_3x3_s_g1_core<s_h, s_w, o_i, o_j>(A, kernel);
+      break;
+    }
   }
 #undef CONV_MOD8
 #undef CONV_MOD16
 #undef CONV_MOD32
+#undef CONV_OUT8
+#undef CONV_OUT16
 }
 
 template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::conv2d_3x3_s_g2_core_dispatch(const Tensor<T> &A, const Tensor<T> &kernel)
@@ -1131,6 +1157,187 @@ template<> template<int in_D, int s_h, int s_w,int o_i,int o_j> void Conv2D<int1
         typename ComputationType<T>::type z = (sum32_int16(s) >> shift);
         SATURATE(z);
         m_out(im_nb, (im_i -o_i)/ s_h, (im_j - o_j )/ s_w , filter) = static_cast<int16_t>(z);
+      }
+    }
+  }
+}
+
+
+template<> template<int in_D, int s_h, int s_w,int o_i,int o_j> void Conv2D<int16_t>::simd16_conv2d_out16_3x3_s_g1_d(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
+{
+  constexpr int im_nb     = 0;
+  constexpr int half_size = 1;
+  const int     shift     = kernel.quantizer + m_q;
+  const int     nb_filters{ kernel.dims()[2] };
+  const int     in_H{ A.dims()[1] };
+  const int     in_W{ A.dims()[2] };
+  constexpr int ihalf_size = 1;
+  constexpr int           start_h{ ihalf_size };
+  constexpr int           start_w{ ihalf_size };
+  constexpr int  N = 8, hN = 4;
+  assert(nb_filters % 16 == 0);
+  assert(transformedKernel.size() != 0);
+  assert(in_D % 2 == 0);
+#if DEBUG_PATH
+  std::cout<<__PRETTY_FUNCTION__<<std::endl;
+#endif
+#if !SATURATE_RESULT
+  const __m256i mask  = _mm256_set1_epi32(65535);
+#endif
+  for (int im_i = start_h + s_h/2; im_i < in_H - start_h; im_i += s_h)
+  {
+    for (int im_j = start_w + s_w/2; im_j < in_W - start_w; im_j += s_w)
+    {
+      for (int filter = 0; filter < nb_filters; filter += 16)
+      {
+        __m256i s_lo = _mm256_setzero_si256();
+        __m256i s_hi = _mm256_setzero_si256();
+        for (int filter_i = -half_size; filter_i <= half_size; ++filter_i)
+        {
+            for (int filter_j = -half_size; filter_j <= half_size; ++filter_j)
+            {
+              const int      ii   = im_i + filter_i;
+              const int      jj   = im_j + filter_j;
+              const int      ki   = half_size + filter_i;
+              const int      kj   = half_size + filter_j;
+              const int16_t* a_base = A.addr(im_nb, ii, jj, 0);
+              const int16_t* k_base = transformedKernel.addr(ki, kj, 0, filter*2);
+              int filter_d = 0;
+              __m256i k[N], v[hN];
+              for (; filter_d < in_D - N + 1; filter_d+=N)
+              {
+                  for (int i=0; i < N; i += 2)
+                  {
+                      auto* k_addr = k_base + (filter_d + i) * nb_filters + filter * 2;
+                      k[i] = _mm256_load_si256((const __m256i*)(k_addr));
+                      k[i+1] = _mm256_load_si256((const __m256i*)(k_addr + 16));
+                      v[i>>1] = _mm256_set1_epi32(*(const int32_t*)(a_base + filter_d + i));
+                  }
+                  for (int i=0; i < N; i += 2)
+                  {
+                      const __m256i mad0 = _mm256_madd_epi16(k[i], v[i>>1]);
+                      const __m256i mad1 = _mm256_madd_epi16(k[i+1], v[i>>1]);
+                      s_lo               = _mm256_add_epi32(s_lo, mad0);
+                      s_hi               = _mm256_add_epi32(s_hi, mad1);
+                  }
+              }
+              for (; filter_d < in_D; filter_d+=2)
+              {
+                  auto* k_addr = k_base + filter_d * nb_filters + filter * 2;
+                  const __m256i k0 = _mm256_load_si256((const __m256i*)(k_addr));
+                  const __m256i k1 = _mm256_load_si256((const __m256i*)(k_addr + 16));
+                  const __m256i v0 = _mm256_set1_epi32(*(const int32_t*)(a_base + filter_d));
+                  const __m256i mad0 = _mm256_madd_epi16(k0, v0);
+                  const __m256i mad1 = _mm256_madd_epi16(k1, v0);
+                  s_lo               = _mm256_add_epi32(s_lo, mad0);
+                  s_hi               = _mm256_add_epi32(s_hi, mad1);
+              }
+            }
+         }
+         s_lo = _mm256_srai_epi32(s_lo, shift);
+         s_hi = _mm256_srai_epi32(s_hi, shift);
+#if SATURATE_RESULT
+        const __m256i sf16= _mm256_permute4x64_epi64(_mm256_packs_epi32(s_lo, s_hi), 0xD8);
+#else
+        const __m256i y0p = _mm256_and_si256(s_lo, mask);
+        const __m256i y1p = _mm256_and_si256(s_hi, mask);
+        const __m256i sf16= _mm256_permute4x64_epi64(_mm256_packus_epi32(y0p , y1p), 0xD8);
+#endif
+         _mm256_store_si256((__m256i *) m_out.addr(im_nb, (im_i -o_i)/ s_h, (im_j - o_j )/ s_w , filter), sf16 );
+      }
+    }
+  }
+}
+
+template<> template<int in_D, int s_h, int s_w,int o_i,int o_j> void Conv2D<int16_t>::simd16_conv2d_out8_3x3_s_g1_d(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
+{
+  constexpr int im_nb     = 0;
+  constexpr int half_size = 1;
+  const int     shift     = kernel.quantizer + m_q;
+  const int     nb_filters{ kernel.dims()[2] };
+  const int     in_H{ A.dims()[1] };
+  const int     in_W{ A.dims()[2] };
+  constexpr int ihalf_size = 1;
+  constexpr int           start_h{ ihalf_size };
+  constexpr int           start_w{ ihalf_size };
+  constexpr int  N = 8, hN = 4;
+  assert(nb_filters % 8 == 0);
+  assert(in_D % 2 == 0);
+  assert(in_H % (2 * s_h) == 0);
+  assert(transformedKernel.size() != 0);
+#if DEBUG_SIMD && __AVX512BW__
+  if (in_D >= 32)
+  {
+    std::cout << "\n[WARN] suboptimal SIMD16 version conv 3x3 inD=" << in_D << " outD=" << nb_filters << " s=[" << s_w << ' ' << s_h << "]  " << in_H << 'x'
+              << in_W << " " << in_D * kernel.dims()[0] * kernel.dims()[1] * nb_filters * (in_H / s_h) * (in_W / s_w) / 1000 << " kMAC" << std::endl;
+  }
+#endif
+#if DEBUG_PATH
+  std::cout<<__PRETTY_FUNCTION__<<std::endl;
+#endif
+#if !SATURATE_RESULT
+  const __m256i mask  = _mm256_set1_epi32(65535);
+#endif
+  for (int im_i = start_h  + s_h/2; im_i < in_H - start_h; im_i += (s_h * 2))
+  {
+    for (int im_j = start_w  + s_w/2; im_j < in_W - start_w; im_j += s_w)
+    {
+      for (int filter = 0; filter < nb_filters; filter += 8)
+      {
+        __m256i s_lo = _mm256_setzero_si256();
+        __m256i s_hi = _mm256_setzero_si256();
+        for (int filter_i = -half_size; filter_i <= half_size; ++filter_i)
+        {
+            for (int filter_j = -half_size; filter_j <= half_size; ++filter_j)
+            {
+              const int      ii   = im_i + filter_i;
+              const int      jj   = im_j + filter_j;
+              const int      ki   = half_size + filter_i;
+              const int      kj   = half_size + filter_j;
+              const int16_t* a_base_0 = A.addr(im_nb, ii, jj, 0);
+              const int16_t* a_base_1 = A.addr(im_nb, ii + s_h, jj, 0);
+              const int16_t* k_base = transformedKernel.addr(ki, kj, 0, filter*2);
+              int filter_d = 0;
+              __m256i k[hN], v[N];
+              for (; filter_d < in_D - N + 1; filter_d+=N)
+              {
+                  for (int i=0; i < N; i += 2)
+                  {
+                      k[i>>1] = _mm256_load_si256((const __m256i*)(k_base + (filter_d + i) * nb_filters + filter * 2));
+                      v[i] = _mm256_set1_epi32(*(const int32_t*)(a_base_0 + filter_d + i));
+                      v[i+1] = _mm256_set1_epi32(*(const int32_t*)(a_base_1 + filter_d + i));
+                  }
+                  for (int i=0; i < N; i += 2)
+                  {
+                      const __m256i mad0 = _mm256_madd_epi16(k[i>>1], v[i]);
+                      const __m256i mad1 = _mm256_madd_epi16(k[i>>1], v[i+1]);
+                      s_lo               = _mm256_add_epi32(s_lo, mad0);
+                      s_hi               = _mm256_add_epi32(s_hi, mad1);
+                  }
+              }
+              for (; filter_d < in_D; filter_d+=2)
+              {
+                  const __m256i k0 = _mm256_load_si256((const __m256i*)(k_base + filter_d * nb_filters + filter * 2));
+                  const __m256i v0 = _mm256_set1_epi32(*(const int32_t*)(a_base_0 + filter_d));
+                  const __m256i v1 = _mm256_set1_epi32(*(const int32_t*)(a_base_1 + filter_d));
+                  const __m256i mad0 = _mm256_madd_epi16(k0, v0);
+                  const __m256i mad1 = _mm256_madd_epi16(k0, v1);
+                  s_lo               = _mm256_add_epi32(s_lo, mad0);
+                  s_hi               = _mm256_add_epi32(s_hi, mad1);
+              }
+            }
+         }
+         s_lo = _mm256_srai_epi32(s_lo, shift);
+         s_hi = _mm256_srai_epi32(s_hi, shift);
+#if SATURATE_RESULT
+        const  __m256i sf16= _mm256_permute4x64_epi64(_mm256_packs_epi32(s_lo, s_hi), 0xD8);
+#else
+        const __m256i y0p = _mm256_and_si256(s_lo, mask);
+        const __m256i y1p = _mm256_and_si256(s_hi, mask);
+        const __m256i sf16= _mm256_permute4x64_epi64(_mm256_packus_epi32(y0p , y1p), 0xD8);
+#endif
+         _mm_storeu_si128((__m128i*)m_out.addr(im_nb, (im_i - o_i)/s_h, (im_j - o_j)/s_w, filter), _mm256_castsi256_si128(sf16));
+         _mm_storeu_si128((__m128i*)m_out.addr(im_nb, (im_i - o_i)/s_h + 1, (im_j - o_j)/s_w, filter), _mm256_extracti128_si256(sf16, 1));
       }
     }
   }
