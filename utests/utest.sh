@@ -46,7 +46,6 @@ if [ USE_ONNXRUNTIME == 1 ]; then
 fi
 
 rm -f ${BNAME}.sadl;
-echo "python3 ${BDIR}/../converter/main.py --input_onnx $1  --output ${BNAME}.sadl $OPT2 > $BLACKHOLE"
 python3 ${BDIR}/../converter/main.py --input_onnx $1  --output ${BNAME}.sadl $OPT2 > $BLACKHOLE
 if [ ! -f ${BNAME}.sadl ]; then
  echo " [ERROR] onnx to SADL conversion failed for ${BNAME}";
