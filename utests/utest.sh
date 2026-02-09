@@ -36,7 +36,7 @@ OPT2="--input_default_value=8"; # for graph with named inputs
 NAME=$(basename $1);
 BNAME=${NAME/.onnx/};
 
-if [ USE_ONNXRUNTIME == 1 ]; then
+if [ "$USE_ONNXRUNTIME" == 1 ]; then
   rm -f ${BNAME}.results;
   python3 ${BDIR}/onnx_inference.py --input_onnx $1 --output ${BNAME}.results $OPT $OPT2 > $BLACKHOLE
   if [ ! -f ${BNAME}.results ]; then

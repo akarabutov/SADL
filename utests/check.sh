@@ -34,16 +34,21 @@ L="conv2d_4_8x8x4_k5x1s1,1_g4_p0,0 conv2d_4_8x8x4_k5x1s2,1_g4_p2,0 conv2d_4_8x8x
   resize_nearest_up2_pytorch resize_bilinear_up2_16x16x64_pytorch prelu_single_alpha_c32 prelu_multiple_alpha_c32 \
   compare_less compare_greater where_constA_less where_constA_greater where_constB_less where_constB_greater \
   maxpool_k2_s2 maxpool_k3_s3 global_maxpool conv3x1_1x3_s2_g4 clip reshape_1234 reshape_minusone mult_4dx4d \
-  mult_reshape_by_transpose_reshape attention_block_fixed reshape_withshape attention_block_dyn avgpool global_averagepool  conv_slice \
+  mult_reshape_by_transpose_reshape attention_block_fixed reshape_withshape attention_block_dyn avgpool global_averagepool conv_slice \
   reduce_mean slice_2d hard_sigmoid prelu2d conv2d_3_2x2x12_k2x2s2,2_g1_p0,0 conv2d_transpose_12_2x2x3_k2x2s2,2_p0,0 \
   conv2d_5x1_1x5_s1_g16 conv2d_7x1_1x7_s1_g16 \
   conv2d_16_4x4x1_k1x3s1,1_g1_p0,0 conv2d_16_4x4x1_k3x1s1,1_g1_p0,0 conv2d_16_4x4x1_k3x3s1,1_g1_p0,0 \
   conv2d_16_4x4x16_k3x3s1,1_g16_p0,0 conv2d_16_4x4x16_k1x3s1,1_g16_p0,0 conv2d_16_4x4x16_k3x1s1,1_g16_p0,0 \
   conv2d_1_4x4x16_k3x3s1,1_g1_p0,0 gridsample_bicubic resize_bicubic_up2 \
   tile \
-  conv2d_transpose_32_2x2x3_k2x2s2,2_p0,0 conv2d_24_2x2x16_k2x2s2,2_g1_p0,0 conv2d_16_2x2x8_k2x2s2,2_g1_p0,0 conv2d_32_2x2x16_k2x2s2,2_g1_p0,0 conv2d_64_2x2x32_k2x2s2,2_g1_p0,0 pad_edge pad_reflect pad_constant sub gather gather_elements flatten floor concat gridsample_bicubic_zeros gridsample_bilinear_zeros gridsample_nearest_zeros resize_bilinear_down2 resize_bilinear_down4 resize_bilinear_up4 \
+  conv2d_transpose_32_2x2x3_k2x2s2,2_p0,0 conv2d_24_2x2x16_k2x2s2,2_g1_p0,0\
+  conv2d_16_2x2x8_k2x2s2,2_g1_p0,0 conv2d_32_2x2x16_k2x2s2,2_g1_p0,0 conv2d_64_2x2x32_k2x2s2,2_g1_p0,0\
+  pad_edge pad_reflect pad_constant sub gather gather_elements flatten floor\
+  concat gridsample_bicubic_zeros gridsample_bilinear_zeros gridsample_nearest_zeros\
+  resize_bilinear_down2 resize_bilinear_down4 resize_bilinear_up4 \
   maxpool_k3_s2_d16 \
-  depth2space_N2 depth2space_N4 abs clip_attr clip_inps"
+  depth2space_N2 depth2space_N4\
+  abs  clip_attr clip_inps"
 
 # mini_model_bb_mult 
 for F in $L; do
