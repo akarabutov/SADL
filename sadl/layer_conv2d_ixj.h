@@ -41,12 +41,111 @@ namespace sadl
 {
 namespace layers
 {
-template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_ixj_s_peel(const Tensor<T> &A, const Tensor<T> &kernel)
+
+#if __AVX2__
+template<> template<int s_h, int s_w> void Conv2D<int16_t>::simd16_conv2d_ixj_s_peel(const Tensor<int16_t> &A, const Tensor<int16_t> &kernel)
 {
 #if DEBUG_PATH
   std::cout<<__PRETTY_FUNCTION__<<std::endl;
 #endif
+  constexpr int im_nb = 0;
+  const int     ihalf_size{ kernel.dims()[0] / 2 };
+  const int     jhalf_size{ kernel.dims()[1] / 2 };
+  const int     nb_filters{ kernel.dims()[2] };
+
+  assert(nb_filters%16==0);
+  const int     shift     = kernel.quantizer + m_q;
+  const int sft = shift;
+  const int top { m_pads[0] };
+  const int left{ m_pads[1] };
+
+    auto filter_cond=[&](int im_i,int im_j) {
+        for (int filter = 0; filter < nb_filters; filter+=16)
+        {
+
+            __m256i s = _mm256_setzero_si256();
+            __m256i s1 = _mm256_setzero_si256();
+
+            for (int filter_i = -ihalf_size; filter_i <= ihalf_size; ++filter_i)
+            {
+              for (int filter_j = -jhalf_size; filter_j <= jhalf_size; ++filter_j)
+              {
+                  int ii = im_i + filter_i;
+                  int jj = im_j + filter_j;
+                  int ki = ihalf_size + filter_i;
+                  int kj = jhalf_size + filter_j;
+                  if (A.in(im_nb, ii, jj, filter))
+                  {
+                      const __m256i *kptr = (const __m256i *) kernel.addr(ki, kj, filter, 0);
+                      const __m256i  k0   = _mm256_load_si256(kptr);
+                      const __m256i *aptr = (const __m256i *) A.addr(im_nb, ii, jj, filter);
+                      const __m256i  v0   = _mm256_load_si256(aptr);
+
+                      const __m256i mul0_hi = _mm256_mulhi_epi16(k0, v0);
+                      const __m256i mul0_lo = _mm256_mullo_epi16(k0, v0);
+
+                      const __m256i mul0_up_lo = _mm256_unpacklo_epi16(mul0_lo, mul0_hi);
+                      const __m256i mul0_up_hi = _mm256_unpackhi_epi16(mul0_lo, mul0_hi);
+                      s                  = _mm256_add_epi32(s, mul0_up_lo);
+                      s1                 = _mm256_add_epi32(s1, mul0_up_hi);
+                  }
+              }
+            }
+             const __m256i sf= _mm256_srai_epi32(s, sft);
+             const __m256i sf1= _mm256_srai_epi32(s1, sft);
+
+             const  __m256i sf16= _mm256_packs_epi32(sf, sf1);
+            _mm256_storeu_si256((__m256i *) m_out.addr(im_nb, im_i/ s_h, im_j/ s_w , filter), sf16 );
+        }
+    };
+    const int start_h{ ihalf_size - top  };
+    const int start_w{ jhalf_size - left };
+    const int in_H{ A.dims()[1] };
+    const int in_W{ A.dims()[2] };
+    // vertical borders
+    for (int im_i = start_h; im_i < in_H; im_i += s_h)
+    {
+        for (int im_j = start_w; im_j < jhalf_size; im_j += s_w)
+        {
+            filter_cond(im_i,im_j);
+        }
+    }
+    for (int im_i = start_h; im_i < in_H; im_i += s_h)
+    {
+        for (int im_j = ((in_W - jhalf_size - start_w) / s_w) * s_w + start_w; im_j < in_W; im_j += s_w)
+        {
+            filter_cond(im_i,im_j);
+        }
+    }
+    // horizontal borders
+    for (int im_j = start_w; im_j < in_W; im_j += s_w) { // corner done twice, avoid computing offset
+        for (int im_i = start_h; im_i < ihalf_size; im_i += s_h) {
+            filter_cond(im_i,im_j);
+        }
+    }
+    for (int im_j = start_w; im_j < in_W; im_j += s_w) {  // corner done twice, avoid computing offset
+        for (int im_i = ((in_H - ihalf_size - start_h) / s_h) * s_h + start_h; im_i < in_H; im_i += s_h) {
+            filter_cond(im_i,im_j);
+        }
+    }
+}
+#endif
+
+template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_ixj_s_peel(const Tensor<T> &A, const Tensor<T> &kernel)
+{
+
     const int in_D{ A.dims()[3] };
+#if __AVX2__
+    if(m_groups == in_D && in_D % 16==0&&std::is_same<T, int16_t>::value)
+    {
+         simd16_conv2d_ixj_s_peel<s_h, s_w>(A, kernel);
+         return;
+    }
+#endif
+
+#if DEBUG_PATH
+  std::cout<<__PRETTY_FUNCTION__<<std::endl;
+#endif
     const int nb_filters { kernel.dims()[2] };
     const int half_size_i{ kernel.dims()[0] / 2 };
     const int half_size_j{ kernel.dims()[1] / 2 };

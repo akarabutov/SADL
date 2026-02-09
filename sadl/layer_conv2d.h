@@ -130,6 +130,12 @@ protected:
     exit(-1);
   }
 
+  template<int s_h, int s_w> void simd16_conv2d_ixj_s_peel(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    assert(false);
+    exit(-1);
+  }
+
   template<int in_D, int s_h, int s_w> void simd8_conv2d_1x1_s_d(const Tensor<T> & /*A*/, const Tensor<T> & /*kernel*/)
   {
     assert(false);
