@@ -184,6 +184,114 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
         std::cout << "\n[ANALYZE] add (in):\t" << K << std::endl;
 #endif
         assert(B.dims().size() == 1 || (B.dims().size() == 2 && B.dims()[0] == 1));
+#if __AVX2__
+        if constexpr (std::is_same_v<T, int16_t>)
+        {
+          if (K % 16 == 0)
+          {
+#if !SATURATE_RESULT
+            const __m256i     mask  = _mm256_set1_epi32(65535);
+#endif       
+            const T* b_base = B.data();
+            for (int n = 0; n < N; ++n)
+            {
+              for (int i = 0; i < H; ++i) 
+              {
+                for (int j = 0; j < W; ++j)
+                {
+                  T       *a_ptr = &m_out(n, i, j, 0);
+                  const T *b_ptr = b_base;
+      
+                  for (int k = 0; k < K; k += 16, a_ptr += 16, b_ptr += 16)
+                  {
+                    __m256i a16 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a_ptr));
+                    __m256i b16 = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b_ptr));
+
+                    __m128i a_first8 = _mm256_castsi256_si128(a16);
+                    __m128i a_last8  = _mm256_extracti128_si256(a16, 1);
+                    __m128i b_first8 = _mm256_castsi256_si128(b16);
+                    __m128i b_last8  = _mm256_extracti128_si256(b16, 1);
+
+                    // int16_t -> int32_t
+                    __m256i a_first8_32 = _mm256_cvtepi16_epi32(a_first8);
+                    __m256i a_last8_32  = _mm256_cvtepi16_epi32(a_last8);
+                    __m256i b_first8_32 = _mm256_cvtepi16_epi32(b_first8);
+                    __m256i b_last8_32  = _mm256_cvtepi16_epi32(b_last8);
+
+                    a_first8_32 = _mm256_slli_epi32(a_first8_32, -shift);
+                    a_last8_32  = _mm256_slli_epi32(a_last8_32,  -shift);
+    
+                    // z += B[k]
+                    __m256i r_first8_32 = _mm256_add_epi32(a_first8_32, b_first8_32);
+                    __m256i r_last8_32  = _mm256_add_epi32(a_last8_32,  b_last8_32);
+  
+                    //  Align with SATURATE() of the scalar implementation.
+#if SATURATE_RESULT
+                    // int32_t -> int16_t SATURATE in _mm256_packs_epi32
+                    __m256i r16 = _mm256_packs_epi32(r_first8_32, r_last8_32);
+#else
+                    const __m256i y0p = _mm256_and_si256(r_first8_32, mask);
+                    const __m256i y1p = _mm256_and_si256(r_last8_32, mask); 
+                    __m256i r16 = _mm256_packus_epi32(y0p , y1p);
+#endif  
+                    
+                    r16 = _mm256_permute4x64_epi64(r16, _MM_SHUFFLE(3, 1, 2, 0));
+                    _mm256_storeu_si256(reinterpret_cast<__m256i*>(a_ptr), r16);
+                  }
+                }
+              }
+            }
+            return true;
+          }
+          
+          else if (K % 8 == 0)
+          {
+#if !SATURATE_RESULT
+            const __m128i mask = _mm_set1_epi32(65535);
+#endif
+            const T* b_base = B.data();
+            for (int n = 0; n < N; ++n)
+            {
+              for (int i = 0; i < H; ++i)
+              {
+                for (int j = 0; j < W; ++j)
+                {
+                  T       *a_ptr = &m_out(n, i, j, 0);
+                  const T *b_ptr = b_base;
+      
+                  for (int k = 0; k < K; k += 8, a_ptr += 8, b_ptr += 8)
+                  {
+                    __m128i a16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(a_ptr));
+                    __m128i b16 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b_ptr));
+
+                    // int16_t -> int32_t
+                    __m256i a32 = _mm256_cvtepi16_epi32(a16);
+                    __m256i b32 = _mm256_cvtepi16_epi32(b16);
+
+                    a32 = _mm256_slli_epi32(a32, -shift);
+                    __m256i r32 = _mm256_add_epi32(a32, b32);
+
+                    __m128i r32_lo = _mm256_castsi256_si128(r32);          
+                    __m128i r32_hi = _mm256_extracti128_si256(r32, 1);
+                    // Align with SATURATE() of the scalar implementation.
+#if SATURATE_RESULT
+                    __m128i r16_128 = _mm_packs_epi32(r32_lo, r32_hi);  // SATURATE in _mm_packs_epi32
+#else
+                    const __m128i y0p = _mm_and_si128(r32_lo, mask);
+                    const __m128i y1p = _mm_and_si128(r32_hi, mask);
+                    __m128i r16_128 = _mm_packus_epi32(y0p , y1p); 
+#endif              
+                    _mm_storeu_si128(reinterpret_cast<__m128i*>(a_ptr), r16_128);
+
+                  }
+                }
+              }
+            }
+            return true;
+          }
+        }
+#endif // __AVX2__
+
         for (int n = 0; n < N; ++n)
           for (int i = 0; i < H; ++i)
             for (int j = 0; j < W; ++j)
@@ -320,6 +428,102 @@ template<typename T> bool BiasAdd<T>::apply(std::vector<Tensor<T> *> &in)
 #if DEBUG_MODEL_ANALYZE
       std::cout << "\n[ANALYZE] add (in):\t" << K << std::endl;
 #endif
+#if __AVX2__
+        if constexpr (std::is_same_v<T, int16_t>)
+        {
+          if (K % 16 == 0)
+          {
+#if !SATURATE_RESULT
+            const __m256i     mask  = _mm256_set1_epi32(65535);
+#endif
+            for (int n = 0; n < N; ++n)
+            {
+              for (int i = 0; i < H; ++i)
+              {
+                for (int j = 0; j < W; ++j)
+                {
+                  T       *a_ptr = &m_out(n, i, j, 0);
+                  const T *b_ptr = B.data();
+
+                  for (int k = 0; k < K; k += 16, a_ptr += 16, b_ptr += 16)
+                  {
+                    __m256i a = _mm256_srai_epi16(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(a_ptr)), shift);
+                    __m256i b = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(b_ptr));
+                    
+#if SATURATE_RESULT
+                    __m256i result = _mm256_adds_epi16(a, b); // SATURATE in _mm256_adds_epi16
+#else
+                    __m128i a_first8 = _mm256_castsi256_si128(a);
+                    __m128i a_last8  = _mm256_extracti128_si256(a, 1);
+                    __m128i b_first8 = _mm256_castsi256_si128(b);
+                    __m128i b_last8  = _mm256_extracti128_si256(b, 1);
+
+                    // int16_t -> int32_t
+                    __m256i a_first8_32 = _mm256_cvtepi16_epi32(a_first8);
+                    __m256i a_last8_32  = _mm256_cvtepi16_epi32(a_last8);
+                    __m256i b_first8_32 = _mm256_cvtepi16_epi32(b_first8);
+                    __m256i b_last8_32  = _mm256_cvtepi16_epi32(b_last8);
+
+                    // add on int32_t
+                    __m256i r_first8_32 = _mm256_add_epi32(a_first8_32, b_first8_32);
+                    __m256i r_last8_32  = _mm256_add_epi32(a_last8_32,  b_last8_32);
+                    // mask 
+                    const __m256i y0p = _mm256_and_si256(r_first8_32, mask);
+                    const __m256i y1p = _mm256_and_si256(r_last8_32, mask); 
+                    __m256i result = _mm256_packus_epi32(y0p , y1p);
+                    result = _mm256_permute4x64_epi64(result, _MM_SHUFFLE(3, 1, 2, 0));
+#endif
+                    _mm256_store_si256(reinterpret_cast<__m256i *>(a_ptr), result);
+                  }
+                }
+              }
+            }
+            return true;
+          }
+          else if (K % 8 == 0)
+          {
+#if !SATURATE_RESULT
+            const __m128i mask = _mm_set1_epi32(65535);
+#endif
+            const T *b_base = B.data();
+            
+            for (int n = 0; n < N; ++n)
+            {
+              for (int i = 0; i < H; ++i)
+              {
+                for (int j = 0; j < W; ++j)
+                {
+                  T       *a_ptr = &m_out(n, i, j, 0);
+                  const T *b_ptr = b_base;
+                  for (int k = 0; k < K; k += 8, a_ptr += 8, b_ptr += 8)
+                  {
+                    __m128i a = _mm_srai_epi16(_mm_loadu_si128(reinterpret_cast<const __m128i*>(a_ptr)), shift);
+                    __m128i b = _mm_loadu_si128(reinterpret_cast<const __m128i*>(b_ptr));                  
+                     
+#if SATURATE_RESULT
+                    __m128i result = _mm_adds_epi16(a, b); // saturate in _mm_adds_epi16 
+#else
+                    // int16_t -> int32_t
+                    __m256i a32 = _mm256_cvtepi16_epi32(a);
+                    __m256i b32 = _mm256_cvtepi16_epi32(b);
+                    // add on int32_t
+                    __m256i r32 = _mm256_add_epi32(a32, b32);
+
+                    __m128i r32_lo = _mm256_castsi256_si128(r32);          
+                    __m128i r32_hi = _mm256_extracti128_si256(r32, 1);
+                    const __m128i y0p = _mm_and_si128(r32_lo, mask);
+                    const __m128i y1p = _mm_and_si128(r32_hi, mask);
+                    __m128i result = _mm_packus_epi32(y0p , y1p);                   
+#endif
+                    _mm_storeu_si128(reinterpret_cast<__m128i*>(a_ptr), result);
+                  }
+                }
+              }
+            }
+            return true;
+          }
+        }
+#endif // __AVX2__
         for (int n = 0; n < N; ++n)
           for (int i = 0; i < H; ++i)
             for (int j = 0; j < W; ++j)
