@@ -61,7 +61,7 @@ template<typename T> bool Expand<T>::apply(std::vector<Tensor<T> *> &in)
   if (in[0]->size() == 1)
   {   // broadcast
     const auto v = (*in[0])[0];
-    fill(m_out.begin(), m_out.end(), v);
+    std::fill(m_out.begin(), m_out.end(), v);
   }
   else
   {
