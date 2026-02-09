@@ -131,6 +131,11 @@ protected:
     exit(-1);
   }
 
+  template<int s_h, int s_w> void simd_mixed_conv2d_1x1_s(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    conv2d_1x1_s<s_h, s_w>(A, kernel);
+  }
+
   template<int s_h, int s_w> void simd16_conv2d_ixj_s_peel(const Tensor<T> &A, const Tensor<T> &kernel)
   {
     assert(false);
