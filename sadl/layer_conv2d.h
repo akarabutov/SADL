@@ -58,6 +58,7 @@ protected:
   Dimensions   m_pads;
   int          m_q      = 0;
   int          m_groups = 1;
+  Tensor<T> transformedKernel;
 
   template<int s_h, int s_w> bool apply_s(const Tensor<T> &A, const Tensor<T> &kernel);
 
@@ -143,6 +144,32 @@ protected:
   {
     simd16_conv2d_1x1_s_d<in_D, s_h, s_w>(A, kernel);
   }
+
+  template<int s_h, int s_w> void simd16_out16_conv2d_1x1_s_d2(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    conv2d_1x1_s<s_h, s_w>(A, kernel);
+  }
+
+  template<int s_h, int s_w> void simd16_out16_conv2d_1x1_s_d1(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    conv2d_1x1_s<s_h, s_w>(A, kernel);
+  }
+
+  template<int s_h, int s_w> void simd32_out32_conv2d_1x1_s(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    simd16_out16_conv2d_1x1_s_d2<s_h, s_w>(A, kernel);
+  }
+
+  template<int in_D, int s_h, int s_w,int o_i,int o_j> void simd16_conv2d_out16_3x3_s_g1_d(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    simd16_conv2d_out8_3x3_s_g1_d<in_D, s_h, s_w, o_i, o_j>(A, kernel);
+  }
+
+  template<int in_D, int s_h, int s_w,int o_i,int o_j> void simd16_conv2d_out8_3x3_s_g1_d(const Tensor<T> &A, const Tensor<T> &kernel)
+  {
+    conv2d_3x3_s_g1_d_core<in_D, s_h, s_w, o_i, o_j>(A, kernel);
+  }
+
 
   template<int in_D, int s_h, int s_w, int o_i, int o_j> void simd16_conv2d_3x3_in16_out16_s_g2_d(const Tensor<T> &A, const Tensor<T> &kernel)
   {
@@ -443,6 +470,47 @@ template<typename T> bool Conv2D<T>::init(const std::vector<Tensor<T> *> &in)
   }
 
   m_out.resize(dim);
+
+  if(transformedKernel.size() == 0 && m_groups==1 && s_h==1 && s_w == 1){
+      const int     nb_filters{ in[1]->dims()[2] };
+      const int     in_D{ in[1]->dims()[3] };
+      if(nb_filters % 16 == 0 && k_h==1 && k_w==1){
+          Tensor<T> &kernel = *in[1];
+          if(in_D % 2 == 0){
+              transformedKernel.resize({1, 1, kernel.dims()[3]/2, kernel.dims()[2]*2 });
+              for (int filter_d = 0; filter_d < in_D / 2; filter_d++){
+                   for (int filter = 0; filter < nb_filters * 2; filter += 2){
+                        transformedKernel(0, 0, filter_d, filter + 0) = kernel(0, 0, filter/2, filter_d*2);
+                        transformedKernel(0, 0, filter_d, filter + 1) = kernel(0, 0, filter/2, filter_d*2+1);
+                   }
+              }
+          }
+          else{
+              transformedKernel.resize({1, 1, kernel.dims()[3], kernel.dims()[2]});
+              for (int filter_d = 0; filter_d < in_D; filter_d++){
+                   for (int filter = 0; filter < nb_filters; filter ++){
+                        transformedKernel(0, 0, filter_d, filter) = kernel(0, 0, filter, filter_d);
+                   }
+              }
+          }
+      }
+      else if(k_h==3 && k_w==3 && in_D % 2 == 0 && ((nb_filters % 16 == 0) || (nb_filters % 8 == 0 && in_H % (2 * s_h) == 0))){
+          Tensor<T> &kernel = *in[1];
+          transformedKernel.resize({3, 3, kernel.dims()[3]/2, kernel.dims()[2]*2});
+          for (int ki = 0; ki < 3; ki++){
+              for (int kj = 0; kj < 3; kj++){
+                  for (int filter_d = 0; filter_d < in_D / 2; filter_d++){
+                       for (int filter = 0; filter < nb_filters * 2; filter += 2)
+                       {
+                            transformedKernel(ki, kj, filter_d, filter + 0) = kernel(ki, kj, filter/2, filter_d*2);
+                            transformedKernel(ki, kj, filter_d, filter + 1) = kernel(ki, kj, filter/2, filter_d*2+1);
+                       }
+                  }
+              }
+          }
+      }
+  }
+
 #if DEBUG_SIMD
   if (m_groups != 1)
   {
