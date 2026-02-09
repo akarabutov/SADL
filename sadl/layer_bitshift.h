@@ -55,8 +55,6 @@ public:
 
 protected:
   virtual bool loadInternal(std::istream &file, Version v) override;
-
-private:
   bool  m_rightDirection;
 };
 
