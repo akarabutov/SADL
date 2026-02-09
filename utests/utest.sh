@@ -20,7 +20,7 @@ if [ $# == 2 ] || [ $# == 3 ]; then
  if [ "$3" = "--no_onnxruntime" ]; then
   USE_ONNXRUNTIME=0
  else
-  OPT="$3";
+  OPT="$OPT $3";
  fi;
 fi;
 
