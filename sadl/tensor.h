@@ -477,6 +477,8 @@ template<typename T> void Tensor<T>::checkSimdAlignment()
   }
   else
   {
+	if (std::is_same<T, int16_t>::value)
+	{
     std::vector<T> tmpDataSparse;
     std::vector<index>      tmpIndices;
 
@@ -500,6 +502,7 @@ template<typename T> void Tensor<T>::checkSimdAlignment()
     }      
     std::swap(tmpDataSparse, m_data_sparse);
     std::swap(tmpIndices, m_indices);
+	}
   }
 #endif
 }
