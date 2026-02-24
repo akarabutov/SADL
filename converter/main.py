@@ -44,13 +44,16 @@ import numpy as np
 import onnx
 
 # file format:
-# MAGIC: SADL0004 [char[8]]
+# MAGIC: SADL0005 [char[8]]
 # type_model [int32_t] 0:int32, 1:float, 2:int16
+# lenght_info [int16]
+# string_without_terminating_0 [char[lenght_info]]
 # nb_layers [int32_t]
 # nb_inputs [int32_t]
 # inputs_id [int32_t[nb_inputs]]
 # nb_outputs [int32_t]
 # outputs_id [int32_t[nb_outputs]]
+# sparsityComputed [char=0]
 # (for all layers:)
 #  layer_id [int32_t]
 #  op_id    [int32_t]
@@ -63,6 +66,8 @@ import onnx
 #  Const_layer:
 #   length_dim [int32_t]
 #   dim [int32_t[length_dim]]
+#   sparse [char=0]
+#   transposed [char=0]
 #   type [int32_t] 0:int32, 1:float32 2:int16
 #   [if integer: quantizer [int32])
 #   data [type[prod(dim)]]
@@ -2211,7 +2216,7 @@ def parse_onnx(model_onnx, node_annotation, input_default_value, verbose=False, 
     return myGraph, myInputs, myOutputs
 
 
-def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
+def dump_onnx(graph, my_inputs, my_outputs, output_filename, info_string, verbose=False):
     # graph[my_name]={ op_type
     #                  inputs: []
     #                  dtype:
@@ -2227,9 +2232,14 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
 
     # dbg print(map_name_to_idx)
     with open(output_filename, "wb") as f:
-        f.write(str.encode("SADL0004"))
+        f.write(str.encode("SADL0005"))
         # output of the network type 0: int32 | 1: float | 2: int16 | default: float(1)
         f.write(struct.pack("i", int(DTYPE_SADL.FLOAT)))
+        info_bytes = str(info_string).encode("utf-8")
+        if len(info_bytes) > 32767:
+            raise ValueError("info_string is too long for int16 length field")
+        f.write(struct.pack("h", len(info_bytes)))
+        f.write(info_bytes)
 
         if verbose:
             print(f"# Nb layers: {len(graph.keys())}")
@@ -2256,7 +2266,8 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
             if verbose:
                 print(f"#  output {i}")
             f.write(struct.pack("i", int(i)))
-
+        f.write(b"\x00") # no precomputed sparsity
+        
         for (name, node) in graph.items():
             if verbose:
                 print(f"# Layer id {map_name_to_idx[name]}")
@@ -2297,7 +2308,8 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, verbose=False):
                     if verbose:
                         print(f"#\t\t {dim}")
                     f.write(struct.pack("i", int(dim)))
-
+                f.write(b"\x00") # not sparse
+                f.write(b"\x00") # not transpose                
                 if verbose:
                     print(f"#\t dtype {node['additional']['dtype']}")
                 f.write(struct.pack("i", int(node["additional"]["dtype"])))
@@ -2916,7 +2928,8 @@ def dumpModel(
     verbose,
     user_annotation,
     input_default_value,
-    force_transpose_constant_tensor_dim4
+    force_transpose_constant_tensor_dim4,
+    info_string
 ):
     """Writes the neural network model in the \"sadl\" format to binary file.
 
@@ -2974,7 +2987,7 @@ def dumpModel(
     my_graph, my_inputs, my_outputs = parse_onnx(
         model_onnx_copy, node_annotation, input_default_value, verbose=verbose, force_transpose_constant_tensor_dim4=force_transpose_constant_tensor_dim4
     )
-    dump_onnx(my_graph, my_inputs, my_outputs, output_filename, verbose=verbose)
+    dump_onnx(my_graph, my_inputs, my_outputs, output_filename, info_string, verbose=verbose)
     if data_layout == "nchw":
         print(
             "[INFO] in SADL, your inputs and outputs has been changed from NCHW to NHWC"
@@ -3029,7 +3042,14 @@ if __name__ == "__main__":
         action="store_true",
         help="If set, force transpose on 4D constant tensors (e.g., NCHW to NHWC). Default is False."
     )
-
+    parser.add_argument(
+        "--info_string",
+        action="store",
+        nargs="?",
+        type=str,
+        help="info string to put in the model"
+    )
+    
     args = parser.parse_args()
     if args.input_onnx is None:
         quit("[ERROR] You should specify an onnx file")
@@ -3037,6 +3057,10 @@ if __name__ == "__main__":
         quit("[ERROR] You should specify an output file")
 
     print("[INFO] ONNX converter")
+    if args.info_string is None:
+        print("[WARNING] no info string provided, please use --info_string to pass an info on the model")
+        args.info_string = ""
+
     if args.verbose is None:
         args.verbose = 0
 
@@ -3074,5 +3098,6 @@ if __name__ == "__main__":
         args.verbose,
         user_annotation,
         args.input_default_value,
-        args.force_transpose_constant_tensor_dim4
+        args.force_transpose_constant_tensor_dim4,
+        args.info_string
     )
