@@ -54,6 +54,7 @@ template<> template<int s_h, int s_w> void Conv2D<int16_t>::simd16_conv2d_ixj_s_
   const int     nb_filters{ kernel.dims()[2] };
 
   assert(nb_filters%16==0);
+  assert(nb_filters == A.dims()[3]);
   const int     shift     = kernel.quantizer + m_q;
   const int sft = shift;
   const int top { m_pads[0] };
@@ -135,8 +136,9 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_ixj_s_pee
 {
 
     const int in_D{ A.dims()[3] };
+    const int nb_filters { kernel.dims()[2] };
 #if __AVX2__
-    if(m_groups == in_D && in_D % 16==0&&std::is_same<T, int16_t>::value)
+    if(m_groups == in_D && nb_filters == in_D && in_D % 16==0&&std::is_same<T, int16_t>::value)
     {
          simd16_conv2d_ixj_s_peel<s_h, s_w>(A, kernel);
          return;
@@ -146,7 +148,6 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_ixj_s_pee
 #if DEBUG_PATH
   std::cout<<__PRETTY_FUNCTION__<<std::endl;
 #endif
-    const int nb_filters { kernel.dims()[2] };
     const int half_size_i{ kernel.dims()[0] / 2 };
     const int half_size_j{ kernel.dims()[1] / 2 };
     const int top { m_pads[0] };
