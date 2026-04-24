@@ -776,12 +776,12 @@ void inline simd_conv2d_3x3_s_d_N_way(const int filterStart, const int nb_filter
           constexpr int in_D_upperBorder = (in_D / 16) * 16;
           for (int filter_d = 0; filter_d < in_D_upperBorder; filter_d += 16)
           {
-            const __m256i *aptr = (__m256i *__restrict) (aPtr + (int64_t) in_D * (in_W * (ii) + jj) + filter_d);
+            const __m256i *aptr = (__m256i *) (aPtr + (int64_t) in_D * (in_W * (ii) + jj) + filter_d);
             const __m256i  v0   = _mm256_loadu_si256(aptr);
 
             for (int wayIdx = 0; wayIdx < N; wayIdx++)
             {
-              const __m256i *kptr = (const __m256i *__restrict) (kPtr_ + wayIdx * in_D + filter_d);
+              const __m256i *kptr = (const __m256i *) (kPtr_ + wayIdx * in_D + filter_d);
 
               const __m256i k0 = _mm256_loadu_si256(kptr);
 
@@ -795,13 +795,12 @@ void inline simd_conv2d_3x3_s_d_N_way(const int filterStart, const int nb_filter
             const __m256i loadMask = _mm256_loadu_si256((const __m256i *) &mask_bits[0]);
 
             constexpr int filterIdx = (in_D / 16) * 16;
-            const int    *aptr =
-              (int *__restrict) (__m256i *__restrict) (aPtr + (int64_t) in_D * (in_W * (ii) + jj) + filterIdx);
+            const int    *aptr = (int *) (aPtr + (int64_t) in_D * (in_W * (ii) + jj) + filterIdx);
             const __m256i v0 = _mm256_maskload_epi32(aptr, loadMask);
 
             for (int wayIdx = 0; wayIdx < N; wayIdx++)
             {
-              const int *kptr = (const int *__restrict) (kPtr_ + wayIdx * in_D + filterIdx);
+              const int *kptr = (const int *) (kPtr_ + wayIdx * in_D + filterIdx);
 
               const __m256i k0 = _mm256_maskload_epi32(kptr, loadMask);
 
@@ -822,7 +821,7 @@ void inline simd_conv2d_3x3_s_d_N_way(const int filterStart, const int nb_filter
       __m128i endRes = _mm_packs_epi32(_mm_srai_epi32(_mm_add_epi32(_mm256_castsi256_si128(sum1), _mm256_extracti128_si256(sum1, 1)), shift),
                                        _mm_srai_epi32(_mm_add_epi32(_mm256_castsi256_si128(sum2), _mm256_extracti128_si256(sum2, 1)), shift));
 
-      _mm_store_si128((__m128i *__restrict) (outCore + filter), endRes);
+      _mm_store_si128((__m128i *) (outCore + filter), endRes);
     }
     else if constexpr (N == 4)
     {
@@ -831,7 +830,7 @@ void inline simd_conv2d_3x3_s_d_N_way(const int filterStart, const int nb_filter
       __m128i endRes =
         _mm_packs_epi32(_mm_srai_epi32(_mm_add_epi32(_mm256_castsi256_si128(sum1), _mm256_extracti128_si256(sum1, 1)), shift), _mm_setzero_si128());
 
-      _mm_storel_epi64((__m128i *__restrict) (outCore + filter), endRes);
+      _mm_storel_epi64((__m128i *) (outCore + filter), endRes);
     }
     else
     {
