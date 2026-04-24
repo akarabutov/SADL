@@ -623,6 +623,7 @@ template<typename T> template<int s_h, int s_w,int o_i,int o_j> void Conv2D<T>::
       break;
     }
   }
+#undef CONV_OP
 #undef CONV_MOD8
 #undef CONV_MOD16
 #undef CONV_MOD32
