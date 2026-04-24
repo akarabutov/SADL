@@ -169,9 +169,6 @@ public:
 
   value_type &      operator()(int i, int j, int k, int l);
   value_type        operator()(int i, int j, int k, int l) const;
-  inline int64_t    addrCore(int i, int j, int k) const;
-  inline const value_type *addrFinalIn(int64_t base, int l) const;
-  inline value_type *addrFinalOut(int64_t base, int l);
   const value_type *addr(int i, int j, int k, int l) const;
   bool in(int i) const;
   bool in(int i, int j) const;
@@ -761,28 +758,6 @@ template<typename T> T &Tensor<T>::operator()(int i, int j, int k, int l)
 template<typename T> bool Tensor<T>::in(int i, int j, int k, int l) const
 {
   return m_dims.size() == 4 && i < m_dims[0] && i >= 0 && j < m_dims[1] && j >= 0 && k < m_dims[2] && k >= 0 && l < m_dims[3] && l >= 0;
-}
-
-template<typename T> int64_t Tensor<T>::addrCore(int i, int j, int k) const
-{
-  assert(m_dims.size() == 4);
-  assert(i < m_dims[0] && i >= 0);
-  assert(j < m_dims[1] && j >= 0);
-  assert(k < m_dims[2] && k >= 0);
-  return (int64_t) (m_dims[3] * (m_dims[2] * (m_dims[1] * i + j) + k));
-}
-
-template<typename T> const T *Tensor<T>::addrFinalIn(int64_t base, int l) const
-{
-  assert(m_dims.size() == 4);
-  assert(l < m_dims[3] && l >= 0);
-  return &m_data[(int64_t) base + l];
-}
-template<typename T> T *Tensor<T>::addrFinalOut(int64_t base, int l)
-{
-  assert(m_dims.size() == 4);
-  assert(l < m_dims[3] && l >= 0);
-  return &m_data[(int64_t) base + l];
 }
 
 template<typename T> const T *Tensor<T>::addr(int i, int j, int k, int l) const
