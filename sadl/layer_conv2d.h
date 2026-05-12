@@ -482,10 +482,11 @@ template<typename T> bool Conv2D<T>::init(const std::vector<Tensor<T> *> &in)
 
   m_out.resize(dim);
 
-  if(transformedKernel.size() == 0 && m_groups==1 && s_h==1 && s_w == 1){
+  if(transformedKernel.size() == 0 && m_groups==1){
+      // Keep 1x1 transformed layout limited to stride-1 path.
       const int     nb_filters{ in[1]->dims()[2] };
       const int     in_D{ in[1]->dims()[3] };
-      if(nb_filters % 16 == 0 && k_h==1 && k_w==1){
+      if(s_h==1 && s_w==1 && nb_filters % 16 == 0 && k_h==1 && k_w==1){
           Tensor<T> &kernel = *in[1];
           if(in_D % 2 == 0){
               transformedKernel.resize({1, 1, kernel.dims()[3]/2, kernel.dims()[2]*2 });
