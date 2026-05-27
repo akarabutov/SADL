@@ -208,6 +208,12 @@ protected:
   {
     simd16_conv2d_3x3_s_g1_d<in_D, s_h, s_w, o_i, o_j>(A, kernel);
   }
+
+  template<int in_D, int s_h, int s_w,int o_i,int o_j> void simd_conv2d_3x3_s_g1_d_core(const Tensor<T> &A, const Tensor<T> &kernel) {
+    assert(false);
+    exit(-1);
+  }
+
   template<int in_D, int ihalf_size, int jhalf_size,int o_i,int o_j> void simd16_conv2d_ixj_s11_g1_d_core(const Tensor<T> &A, const Tensor<T> &kernel) {
     conv2d_ixj_s11_g1_d_core<in_D,ihalf_size,jhalf_size, o_i, o_j>(A,kernel);
 
