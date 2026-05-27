@@ -55,6 +55,7 @@ protected:
 // assume data in in[0] and shape in in[1]
 template<typename T> bool Reshape<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   // second layer is reshape prms
   // assert(in[1]->dims().size()==2);

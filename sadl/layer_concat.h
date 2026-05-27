@@ -55,6 +55,7 @@ protected:
 
 template<typename T> bool Concat<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() >= 3);
   const int nb_in = (int) in.size() - 1;                                                                        // without axis inputs
   const int axis  = m_axis;

@@ -34,6 +34,7 @@
 #include "layer.h"
 #include "interpolation_utils.h"
 #include <cfenv>
+#include <type_traits>
 
 namespace sadl
 {
@@ -55,6 +56,10 @@ protected:
   bool         gridsample_nearest(std::vector<Tensor<T> *> &in);
   bool         gridsample_bilinear(std::vector<Tensor<T> *> &in);
   bool         gridsample_bicubic(std::vector<Tensor<T> *> &in);
+  bool         gridsample_bilinear_scalar(const Tensor<T> &data, const Tensor<T> &grid);
+#if __AVX2__
+  bool         gridsample_bilinear_simd256(const Tensor<T> &data, const Tensor<T> &grid);
+#endif
   void         get_bilinear_coeffs(T2 y, T2 x, int pos[], T2 coeffs[]);
   void         get_bicubic_coeffs(T2 y, T2 x, T2 coeffs[]) const;
   void         calc_bicubic_positions(T2 y, T2 x, int H, int W, int pos[][2]) const;
@@ -130,6 +135,7 @@ template<typename T> bool GridSample<T>::init(const std::vector<Tensor<T> *> &in
 
 template<typename T> bool GridSample<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   if (m_mode == gridsample_mode_nearest)
     return gridsample_nearest(in);
   else if (m_mode == gridsample_mode_bilinear)
@@ -221,6 +227,18 @@ template<typename T> bool GridSample<T>::gridsample_bilinear(std::vector<Tensor<
   m_grid_quantizer      = grid.quantizer;
   assert(data.dims()[0] == 1 && grid.dims()[0] == 1 && grid.dims()[2] == 2);
 
+#if __AVX2__
+  if constexpr (std::is_same_v<T, int16_t>)
+  {
+    return gridsample_bilinear_simd256(data, grid);
+  }
+#endif
+
+  return gridsample_bilinear_scalar(data, grid);
+}
+
+template<typename T> bool GridSample<T>::gridsample_bilinear_scalar(const Tensor<T> &data, const Tensor<T> &grid)
+{
   constexpr int im_nb = 0;
   int           shift = m_grid_quantizer + 1;
   int           H_in  = data.dims()[1];
@@ -273,6 +291,149 @@ template<typename T> bool GridSample<T>::gridsample_bilinear(std::vector<Tensor<
   }
   return true;
 }
+
+#if __AVX2__
+template<typename T> bool GridSample<T>::gridsample_bilinear_simd256(const Tensor<T> &data, const Tensor<T> &grid)
+{
+  constexpr int im_nb = 0;
+  int           shift = m_grid_quantizer + 1;
+  int           H_in  = data.dims()[1];
+  int           W_in  = data.dims()[2];
+  int           H_out = grid.dims()[3];
+  int           W_out = grid.dims()[1];
+  int           in_D  = data.dims()[3];
+  int           mod_r  = 0;
+
+  if (in_D % 8 ==0)  // to avoid mod operation per pixel in the spatial domain
+  {
+    mod_r = 8;
+    if (in_D % 16 ==0)
+    {
+      mod_r = 16;
+    }
+  }
+
+  [[maybe_unused]] const __m256i v_bias        = _mm256_set1_epi32(1 << m_grid_quantizer);
+  [[maybe_unused]] const __m256i v_win_minus_1 = _mm256_set1_epi32(W_in - 1);
+  [[maybe_unused]] const __m256i v_hin_minus_1 = _mm256_set1_epi32(H_in - 1);
+  [[maybe_unused]] const __m256i v_win         = _mm256_set1_epi32(W_in);
+  [[maybe_unused]] const __m256i v_hin         = _mm256_set1_epi32(H_in);
+  [[maybe_unused]] const __m256i v_zero        = _mm256_setzero_si256();
+  [[maybe_unused]] const __m256i v_one         = _mm256_set1_epi32(1);
+  [[maybe_unused]] const __m256i v_minus_one   = _mm256_set1_epi32(-1);
+
+  for (int im_j = 0; im_j < W_out; im_j++)
+  {
+    int im_i = 0;
+    if constexpr (std::is_same_v<T, int16_t>)
+    {
+      const int16_t *grid_x_ptr    = grid.addr(im_nb, im_j, 0, 0);
+      const int16_t *grid_y_ptr    = grid.addr(im_nb, im_j, 1, 0);
+
+      for (; im_i <= H_out - 8; im_i += 8)
+      {
+        __m256i x_raw = _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *) (grid_x_ptr + im_i)));
+        __m256i y_raw = _mm256_cvtepi16_epi32(_mm_loadu_si128((const __m128i *) (grid_y_ptr + im_i)));
+
+        __m256i x_denorm, y_denorm;
+        if (m_align_corners)
+        {
+          x_denorm = _mm256_mullo_epi32(_mm256_add_epi32(x_raw, v_bias), v_win_minus_1);
+          y_denorm = _mm256_mullo_epi32(_mm256_add_epi32(y_raw, v_bias), v_hin_minus_1);
+        }
+        else
+        {
+          x_denorm = _mm256_sub_epi32(_mm256_mullo_epi32(_mm256_add_epi32(x_raw, v_bias), v_win), v_bias);
+          y_denorm = _mm256_sub_epi32(_mm256_mullo_epi32(_mm256_add_epi32(y_raw, v_bias), v_hin), v_bias);
+        }
+
+        __m256i xl = _mm256_srai_epi32(x_denorm, shift);
+        __m256i yt = _mm256_srai_epi32(y_denorm, shift);
+        __m256i xr = _mm256_add_epi32(xl, v_one);
+        __m256i yb = _mm256_add_epi32(yt, v_one);
+
+        __m256i dx1 = _mm256_sub_epi32(x_denorm, _mm256_slli_epi32(xl, shift));
+        __m256i dx2 = _mm256_sub_epi32(_mm256_slli_epi32(xr, shift), x_denorm);
+        __m256i dy1 = _mm256_sub_epi32(y_denorm, _mm256_slli_epi32(yt, shift));
+        __m256i dy2 = _mm256_sub_epi32(_mm256_slli_epi32(yb, shift), y_denorm);
+
+        __m256i w11 = _mm256_srai_epi32(_mm256_mullo_epi32(dy2, dx2), shift);
+        __m256i w12 = _mm256_srai_epi32(_mm256_mullo_epi32(dy2, dx1), shift);
+        __m256i w21 = _mm256_srai_epi32(_mm256_mullo_epi32(dy1, dx2), shift);
+        __m256i w22 = _mm256_srai_epi32(_mm256_mullo_epi32(dy1, dx1), shift);
+
+        if (m_padding_mode == gridsample_paddingmode_zeros)
+        {
+          __m256i mask_xl = _mm256_and_si256(_mm256_cmpgt_epi32(xl, v_minus_one), _mm256_cmpgt_epi32(v_win, xl));
+          __m256i mask_xr = _mm256_and_si256(_mm256_cmpgt_epi32(xr, v_minus_one), _mm256_cmpgt_epi32(v_win, xr));
+          __m256i mask_yt = _mm256_and_si256(_mm256_cmpgt_epi32(yt, v_minus_one), _mm256_cmpgt_epi32(v_hin, yt));
+          __m256i mask_yb = _mm256_and_si256(_mm256_cmpgt_epi32(yb, v_minus_one), _mm256_cmpgt_epi32(v_hin, yb));
+
+          w11 = _mm256_and_si256(w11, _mm256_and_si256(mask_yt, mask_xl));
+          w12 = _mm256_and_si256(w12, _mm256_and_si256(mask_yt, mask_xr));
+          w21 = _mm256_and_si256(w21, _mm256_and_si256(mask_yb, mask_xl));
+          w22 = _mm256_and_si256(w22, _mm256_and_si256(mask_yb, mask_xr));
+        }
+
+        xl = _mm256_max_epi32(v_zero, _mm256_min_epi32(xl, v_win_minus_1));
+        xr = _mm256_max_epi32(v_zero, _mm256_min_epi32(xr, v_win_minus_1));
+        yt = _mm256_max_epi32(v_zero, _mm256_min_epi32(yt, v_hin_minus_1));
+        yb = _mm256_max_epi32(v_zero, _mm256_min_epi32(yb, v_hin_minus_1));
+
+        alignas(32) int32_t c11[8], c12[8], c21[8], c22[8];
+        alignas(32) int32_t vxl[8], vyt[8], vxr[8], vyb[8];
+        _mm256_store_si256((__m256i *) c11, w11);
+        _mm256_store_si256((__m256i *) c12, w12);
+        _mm256_store_si256((__m256i *) c21, w21);
+        _mm256_store_si256((__m256i *) c22, w22);
+        _mm256_store_si256((__m256i *) vxl, xl);
+        _mm256_store_si256((__m256i *) vyt, yt);
+        _mm256_store_si256((__m256i *) vxr, xr);
+        _mm256_store_si256((__m256i *) vyb, yb);
+
+        for (int k = 0; k < 8; ++k)
+        {
+          T2  coeffs[4] = { c11[k], c12[k], c21[k], c22[k] };
+          int pos[4]    = { vxl[k], vyt[k], vxr[k], vyb[k] };
+          BILINEAR_COUNTERS(data, coeffs);
+          bilinear_in_channels(data, coeffs, pos, shift, im_i + k, im_j, m_out, mod_r);
+        }
+      }
+    }
+
+    for (; im_i < H_out; im_i++)
+    {
+      // compute pixel locations from the grid
+      T2 x = grid(im_nb, im_j, 0, im_i);
+      T2 y = grid(im_nb, im_j, 1, im_i);
+      gs_denormalize(x, W_in);
+      gs_denormalize(y, H_in);
+
+      // compute the output Y using data values and pixel locations
+      T2   coeffs[4];
+      int  pos[4];
+      int &x_ori_left = pos[0], &y_ori_top = pos[1], &x_ori_right = pos[2], &y_ori_bottom = pos[3];
+
+      get_bilinear_coeffs(y, x, pos, coeffs);
+      if (m_padding_mode == gridsample_paddingmode_zeros)
+      {
+        if (!(y_ori_top    >= 0 && y_ori_top    < H_in && x_ori_left  >= 0 && x_ori_left  < W_in)) coeffs[0] = (T2)0;
+        if (!(y_ori_top    >= 0 && y_ori_top    < H_in && x_ori_right >= 0 && x_ori_right < W_in)) coeffs[1] = (T2)0;
+        if (!(y_ori_bottom >= 0 && y_ori_bottom < H_in && x_ori_left  >= 0 && x_ori_left  < W_in)) coeffs[2] = (T2)0;
+        if (!(y_ori_bottom >= 0 && y_ori_bottom < H_in && x_ori_right >= 0 && x_ori_right < W_in)) coeffs[3] = (T2)0;
+      }
+      pixel_addr_at_grid(H_in, W_in, y_ori_top, x_ori_left);
+      pixel_addr_at_grid(H_in, W_in, y_ori_top, x_ori_right);
+      pixel_addr_at_grid(H_in, W_in, y_ori_bottom, x_ori_left);
+      pixel_addr_at_grid(H_in, W_in, y_ori_bottom, x_ori_right);
+
+      BILINEAR_COUNTERS(data, coeffs);
+      bilinear_in_channels(data, coeffs, pos, shift, im_i, im_j, m_out, mod_r);
+    }
+  }
+  return true;
+}
+#endif
 
 template<typename T> bool GridSample<T>::gridsample_bicubic(std::vector<Tensor<T> *> &in)
 {

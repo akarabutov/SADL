@@ -81,6 +81,7 @@ protected:
 
 template<typename T> bool MatMul<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
 #if __AVX2__
 #define MULT8_DIM2 apply_dim2_simd8

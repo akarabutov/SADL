@@ -54,6 +54,7 @@ protected:
 // assume data in in[0] and shape in in[1]
 template<typename T> bool Expand<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   // second layer is reshape prms, already process in init
   m_out.quantizer   = in[0]->quantizer;

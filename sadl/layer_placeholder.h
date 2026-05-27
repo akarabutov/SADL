@@ -60,6 +60,7 @@ protected:
 
 template<typename T> bool Placeholder<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   swap(*in[0], m_out);
   if (m_q >= 0)
@@ -74,6 +75,7 @@ template<typename T> bool Placeholder<T>::init(const std::vector<Tensor<T> *> &i
   if (in.size() != 1)
     return false;
   m_out.resize(in[0]->dims());
+  m_out.acquire(0); 
   m_dims     = in[0]->dims();
   m_initDone = true;
   return true;

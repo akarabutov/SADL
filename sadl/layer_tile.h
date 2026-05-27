@@ -55,6 +55,7 @@ protected:
 
 template<typename T> bool Tile<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   m_out.quantizer = in[0]->quantizer;
 

@@ -162,10 +162,12 @@ template<typename T> bool Resize<T>::init(const std::vector<Tensor<T> *> &in)
     return false;
   }
   scale_factors.resize(in[1]->dims());
+  scale_factors.acquire(0);
   scale_factors[0] = static_cast<T2>(scale_N);
   scale_factors[1] = static_cast<T2>(scale_H);
   scale_factors[2] = static_cast<T2>(scale_W);
   scale_factors[3] = static_cast<T2>(scale_C);
+ 
   // resize m_out
   Dimensions dim;
   dim.resize(4);
@@ -190,6 +192,7 @@ template<typename T> bool Resize<T>::init(const std::vector<Tensor<T> *> &in)
 
 template<typename T> bool Resize<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   if (m_mode == resize_mode_linear)
     return interpolate_bilinear(in);
   else if (m_mode == resize_mode_nearest)

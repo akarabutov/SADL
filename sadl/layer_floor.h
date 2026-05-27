@@ -54,6 +54,7 @@ protected:
 
 template<typename T> bool Floor<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
     assert(in.size() == 1);
     assert(in[0]->dims() == m_out.dims());
     swapData(*in[0], m_out);

@@ -79,6 +79,7 @@ protected:
 // kernel [filter_height, filter_width, in_channels, out_channels]
 template<typename T> bool Conv2DTranspose<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   assert(in[0]->dims().size() == 4);
   assert(in[1]->dims().size() == 4);
@@ -172,6 +173,9 @@ template<typename T> bool Conv2DTranspose<T>::apply(std::vector<Tensor<T> *> &in
 #elif __AVX2__
   switch (in_D)
   {
+  case 16:
+    conv2dtranspose_simd256<16>(nb_filters, A, kernel);
+    break;
   case 32:
     conv2dtranspose_simd256<32>(nb_filters, A, kernel);
     break;
@@ -237,6 +241,7 @@ template<typename T> bool Conv2DTranspose<T>::init(const std::vector<Tensor<T> *
   dim[1] += half_size * 2;
   dim[2] += half_size * 2;
   m_tempo.resize(dim);
+  m_tempo.acquire(0);
   m_initDone = true;
   return true;
 }
@@ -275,7 +280,7 @@ template<typename T> bool Conv2DTranspose<T>::loadInternal(std::istream &file, V
     std::cerr << "[ERROR] invalid strides[3]: " << m_strides[3] << std::endl;
     return false;
   }
-  if (m_strides[1] != 2 || m_strides[1] != 2)
+  if (m_strides[1] != 2 || m_strides[2] != 2)
   {
     std::cerr << "[ERROR] stride not 2: to check " << m_strides << std::endl;
     return false;
@@ -676,8 +681,8 @@ void Conv2DTranspose<int16_t>::conv2dtranspose_simd256(int nb_filters, const Ten
   constexpr int im_nb = 0;
   assert(m_strides[1] == 2);
   assert(m_strides[2] == 2);
+  assert(nb_filters % 16 == 0);
   assert(in_D % 16 == 0);   // Should be used with mod16 filters.
-  using T = int16_t;
   assert(kernel.dims()[0] == kernel.dims()[1]);
   const int     kernel_size = kernel.dims()[0];
   const int     half_size   = (kernel.dims()[0] - 1) / 2;
@@ -690,6 +695,7 @@ void Conv2DTranspose<int16_t>::conv2dtranspose_simd256(int nb_filters, const Ten
 #if DEBUG_PATH
   std::cout<<__PRETTY_FUNCTION__<<std::endl;
 #endif
+
   for (int im_i = 0; im_i < out_h; im_i += sh)
   {
     for (int im_j = 0; im_j < out_w; im_j += sw)
@@ -697,41 +703,84 @@ void Conv2DTranspose<int16_t>::conv2dtranspose_simd256(int nb_filters, const Ten
        [[maybe_unused]] const int i1 = im_i / sh;
        [[maybe_unused]] const int j1 = im_j / sw;
       assert(A.in(im_nb, i1, j1, 0));
-      for (int ki = 0; ki < kernel_size; ++ki)
+
+      for (int filter_d = 0; filter_d < in_D; filter_d += 16)
       {
-        // fixed
-        for (int kj = 0; kj < kernel_size; ++kj)
+        const __m256i v0 = _mm256_load_si256((const __m256i *) A.addr(im_nb, i1, j1, filter_d));
+
+        for (int ki = 0; ki < kernel_size; ++ki)
         {
-          const int ii = im_i + ki;
-          const int jj = im_j + kj;
-          for (int filter = 0; filter < nb_filters; ++filter)
+          for (int kj = 0; kj < kernel_size; ++kj)
           {
-            __m256i  s    = _mm256_setzero_si256();
-            const T *aptr = A.addr(im_nb, i1, j1, 0);
-            const T *kptr = kernel.addr(ki, kj, filter, 0);
-            // fixed
-            for (int filter_d = 0; filter_d < in_D; filter_d += 16)
+            const int ii = im_i + ki;
+            const int jj = im_j + kj;
+            
+            // Process 8 filters at a time
+            for (int filter = 0; filter < nb_filters; filter += 8)
             {
-              const __m256i k0   = _mm256_loadu_si256((__m256i *) (kptr + filter_d));   // not always aligned
-              const __m256i v0   = _mm256_load_si256((__m256i *) (aptr + filter_d));
-              const __m256i mad0 = _mm256_madd_epi16(k0, v0);   // res in si32
-              s                  = _mm256_add_epi32(s, mad0);
+              __m256i k0 = _mm256_loadu_si256((const __m256i *) kernel.addr(ki, kj, filter + 0, filter_d));
+              __m256i k1 = _mm256_loadu_si256((const __m256i *) kernel.addr(ki, kj, filter + 1, filter_d));
+              __m256i k2 = _mm256_loadu_si256((const __m256i *) kernel.addr(ki, kj, filter + 2, filter_d));
+              __m256i k3 = _mm256_loadu_si256((const __m256i *) kernel.addr(ki, kj, filter + 3, filter_d));
+              __m256i k4 = _mm256_loadu_si256((const __m256i *) kernel.addr(ki, kj, filter + 4, filter_d));
+              __m256i k5 = _mm256_loadu_si256((const __m256i *) kernel.addr(ki, kj, filter + 5, filter_d));
+              __m256i k6 = _mm256_loadu_si256((const __m256i *) kernel.addr(ki, kj, filter + 6, filter_d));
+              __m256i k7 = _mm256_loadu_si256((const __m256i *) kernel.addr(ki, kj, filter + 7, filter_d));
+
+              __m256i s0 = _mm256_madd_epi16(k0, v0);
+              __m256i s1 = _mm256_madd_epi16(k1, v0);
+              __m256i s2 = _mm256_madd_epi16(k2, v0);
+              __m256i s3 = _mm256_madd_epi16(k3, v0);
+              __m256i s4 = _mm256_madd_epi16(k4, v0);
+              __m256i s5 = _mm256_madd_epi16(k5, v0);
+              __m256i s6 = _mm256_madd_epi16(k6, v0);
+              __m256i s7 = _mm256_madd_epi16(k7, v0);
+
+              // Horizontal reduction: 8 regs of 8xint32 -> 1 reg of 8xint32
+              __m256i h01 = _mm256_hadd_epi32(s0, s1);
+              __m256i h23 = _mm256_hadd_epi32(s2, s3);
+              __m256i h45 = _mm256_hadd_epi32(s4, s5);
+              __m256i h67 = _mm256_hadd_epi32(s6, s7);
+
+              __m256i q0123 = _mm256_hadd_epi32(h01, h23);
+              __m256i q4567 = _mm256_hadd_epi32(h45, h67);
+
+              __m256i low  = _mm256_permute2x128_si256(q0123, q4567, 0x20);
+              __m256i high = _mm256_permute2x128_si256(q0123, q4567, 0x31);
+              __m256i res  = _mm256_add_epi32(low, high);
+
+              // Vectorized update of tempo
+              int32_t *tempo_ptr = &m_tempo(im_nb, ii, jj, filter);
+              __m256i  curr      = _mm256_loadu_si256((__m256i *) tempo_ptr);
+              _mm256_storeu_si256((__m256i *) tempo_ptr, _mm256_add_epi32(curr, res));
             }
-            m_tempo(im_nb, ii, jj, filter) += sum32_int16(s);
           }
         }
       }
     }
   }
+
+  // Vectorized Quantization Pass
+  const __m128i v_shift = _mm_cvtsi32_si128(shift);
   for (int im_i = 0; im_i < out_h; ++im_i)
   {
     for (int im_j = 0; im_j < out_w; ++im_j)
     {
-      for (int filter = 0; filter < nb_filters; ++filter)
+      int32_t *t_ptr = &m_tempo(im_nb, im_i + half_size, im_j + half_size, 0);
+      int16_t *o_ptr = &m_out(im_nb, im_i, im_j, 0);
+      for (int filter = 0; filter < nb_filters; filter += 16)
       {
-        auto z = m_tempo(im_nb, im_i + half_size, im_j + half_size, filter) >> shift;
-        SATURATE(z);
-        m_out(im_nb, im_i, im_j, filter) = z;
+        __m256i t0 = _mm256_loadu_si256((const __m256i *) (t_ptr + filter));
+        __m256i t1 = _mm256_loadu_si256((const __m256i *) (t_ptr + filter + 8));
+
+        t0 = _mm256_sra_epi32(t0, v_shift);
+        t1 = _mm256_sra_epi32(t1, v_shift);
+
+        // Pack 32-bit to 16-bit with saturation
+        __m256i packed = _mm256_packs_epi32(t0, t1);
+        // Fix lane permutation from packs_epi32
+        __m256i out = _mm256_permute4x64_epi64(packed, 0xD8);
+        _mm256_storeu_si256((__m256i *) (o_ptr + filter), out);
       }
     }
   }

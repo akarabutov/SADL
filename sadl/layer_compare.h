@@ -65,6 +65,7 @@ protected:
 
 template<typename T> bool Compare<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   assert(in[0]->dims() == m_out.dims() || (in[0]->dims().size() == 1 && in[0]->dims()[0] == 1));
   assert(in[1]->dims() == m_out.dims() || (in[1]->dims().size() == 1 && in[1]->dims()[0] == 1));
