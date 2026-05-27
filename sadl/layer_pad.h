@@ -63,6 +63,7 @@ protected:
 
 template<typename T> bool Pad<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
 #if DEBUG_SIMD
   std::cout << "\n[WARN] generic version pad" << std::endl;
 #endif

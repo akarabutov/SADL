@@ -104,6 +104,28 @@ struct TensorInternalType
   };
 };
 
+template<typename T> class LayerExecutionScope
+{
+public:
+  LayerExecutionScope(Tensor<T> &out, std::vector<Tensor<T> *> &in): m_in(in)
+  {
+    out.acquire();
+  }
+  ~LayerExecutionScope()
+  {
+    for (auto *tin: m_in)
+      tin->release();
+  }
+
+private:
+  std::vector<Tensor<T> *> &m_in;
+};
+
+template<typename T> LayerExecutionScope<T> makeLayerExecutionScope(Tensor<T> &out, std::vector<Tensor<T> *> &in)
+{
+  return LayerExecutionScope<T>(out, in);
+}
+
 template<typename T> class Layer
 {
 public:

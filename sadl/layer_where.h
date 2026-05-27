@@ -55,6 +55,7 @@ protected:
 
 template<typename T> bool Where<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 3);
   if (in[0]->size() != 1)
   {

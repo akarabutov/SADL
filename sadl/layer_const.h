@@ -58,6 +58,7 @@ protected:
 
 template<typename T> bool Const<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  // useless auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 0);
   (void) in;
   // assert(ptr==ptr)
@@ -161,6 +162,7 @@ template<typename T> bool Const<T>::loadInternal(std::istream &file, Version v)
 #endif
   {
       m_out.resize(d);
+      m_out.acquire(0);
   }
   SADL_DBG(std::cout << "  - tensor: " << m_out.dims() << std::endl);
 

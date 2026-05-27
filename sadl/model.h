@@ -571,6 +571,8 @@ template<typename T> bool Model<T>::init(std::vector<Tensor<T>> &in)
         return false;
       }
     }
+    if (m_data[layer_cnt].layer->op() != layers::OperationType::Const)
+      m_data[layer_cnt].layer->output().release(true);
     ok &= m_data[layer_cnt].layer->init(m_data[layer_cnt].inputs);
     SADL_DBG(std::cout << "[INFO] init layer " << m_data[layer_cnt].layer->id() << ' '
                        << layers::opName((layers::OperationType::Type) (m_data[layer_cnt].layer->op())) << ' ' << m_data[layer_cnt].layer->name() << " in=[");
@@ -584,7 +586,10 @@ template<typename T> bool Model<T>::init(std::vector<Tensor<T>> &in)
     }
   }
   SADL_DBG(std::cout << "[INFO] == end model init ==\n" << std::endl);
-
+  // set all outputs persistent to avoid surprise the user
+  for(auto idx: m_ids_output) {
+    getLayer(idx).layer->output().acquire(0);
+  }
   if (!ok)
     return false;
   m_initDone = true;
@@ -663,17 +668,42 @@ template<typename T> bool Model<T>::apply(std::vector<Tensor<T>> &in)
 #if DEBUG_VALUES || DEBUG_MODEL
   std::cout << "[INFO] == start model inference ==" << std::endl;
 #endif
+
   assert(!m_data.empty());
   assert((int) in.size() == m_nb_inputs);
   // should be ok in order (take care of that on python side)
   bool ok               = true;
   int  placeholders_cnt = 0;
+  auto count_input_occurrences = [&](typename layers::Layer<T>::Id id) -> int {
+    int count = 0;
+    for (const auto &ld: m_data)
+    {
+      if (!ld.layer->m_torun)
+        continue;
+      for (const auto &iid: ld.layer->inputsId())
+      {
+        if (iid == id)
+          ++count;
+      }
+    }
+    return count;
+  };
   for (int layer_cnt = 0; layer_cnt < (int) m_data.size() && ok; ++layer_cnt)
   {
     if (m_data[layer_cnt].layer->op() == layers::OperationType::Placeholder && m_data[layer_cnt].layer->m_torun )
     {
       std::vector<Tensor<T> *> v = { &in[placeholders_cnt] };
       ++placeholders_cnt;
+      if constexpr (!Tensor<T>::kPersistentByDefault)
+      {
+        if (!m_data[layer_cnt].layer->output().isPersistent())
+        {
+          const auto id = m_data[layer_cnt].layer->id();
+          const int  output_refs = count_input_occurrences(id) + (std::find(m_ids_output.begin(), m_ids_output.end(), id) != m_ids_output.end() ? 1 : 0);
+          if (output_refs > 1)
+            m_data[layer_cnt].layer->output().acquire(output_refs - 1);
+        }
+      }
       ok &= m_data[layer_cnt].layer->apply(v);
 #if DEBUG_VALUES || DEBUG_MODEL
       std::cout << "[INFO] " << m_data[layer_cnt].layer->id() << " Placeholder (" << m_data[layer_cnt].layer->name() << "): ";
@@ -745,6 +775,16 @@ template<typename T> bool Model<T>::apply(std::vector<Tensor<T>> &in)
     }
 #endif
 
+    if constexpr (!Tensor<T>::kPersistentByDefault)
+    {
+      if (!m_data[layer_cnt].layer->output().isPersistent())
+      {
+        const auto id = m_data[layer_cnt].layer->id();
+        const int  output_refs = count_input_occurrences(id) + (std::find(m_ids_output.begin(), m_ids_output.end(), id) != m_ids_output.end() ? 1 : 0);
+        if (output_refs > 1)
+          m_data[layer_cnt].layer->output().acquire(output_refs - 1);
+      }
+    }
     ok &= m_data[layer_cnt].layer->apply(m_data[layer_cnt].inputs);
 #if DEBUG_VALUES
 #if SPARSE_SUPPORT
@@ -941,11 +981,16 @@ template<typename T> void Model<T>::insertCopyLayers()
         layer_with_current_as_mutable_input.push_back(id);
       }
     }
-    if (layer_with_current_as_input.size()>1 && !layer_with_current_as_mutable_input.empty())
+    const bool is_model_output =
+        std::find(m_ids_output.begin(), m_ids_output.end(), current_layer.id()) != m_ids_output.end();
+    const int consumer_count = (int) layer_with_current_as_input.size() + (is_model_output ? 1 : 0);
+    const bool need_copy_layers = consumer_count > 1 && !layer_with_current_as_mutable_input.empty();
+    const bool has_non_mutable = consumer_count > (int) layer_with_current_as_mutable_input.size();
+    int offset = has_non_mutable ? 0 : 1;
+    if (need_copy_layers)
     {                                                           // need copy layer
       // for current layer L, insert copy layers C just after: x x x L C C xxxx
       std::vector<typename layers::Layer<T>::Id> id_copy_layers;
-      const int offset=layer_with_current_as_input.size()==layer_with_current_as_mutable_input.size();
       for (int n = 0; n < (int) layer_with_current_as_mutable_input.size() - offset; ++n)
       {
         LayerData copy_layer;
@@ -997,6 +1042,7 @@ template<typename T> void Model<T>::reshapeMatrix()
           // do not swap dim, just data
           SADL_DBG(std::cout << "[INFO] transpose data " << L.layer->id() << ' ' << L.layer->name() << " " << R.dims() << std::endl);
           Tensor<T> T2(d);
+          T2.acquire(0);
           T2.quantizer = R.quantizer;
           for (int i = 0; i < d[0]; ++i)
             for (int j = 0; j < d[1]; ++j)
@@ -1046,6 +1092,7 @@ template<typename T> void Model<T>::reshapeConv2DFilters()
       d[3]     = tmp;
       SADL_DBG(std::cout << "[INFO] reshape " << L.layer->id() << ' ' << L.layer->name() << " " << W.dims() << " => " << d << std::endl);
       Tensor<T> T2(d);
+      T2.acquire(0);
       T2.quantizer = W.quantizer;
       for (int i = 0; i < d[0]; ++i)
         for (int j = 0; j < d[1]; ++j)
@@ -1070,10 +1117,11 @@ template<typename T> std::vector<Tensor<T>> Model<T>::getInputsTemplate() const
       const auto &L = dynamic_cast<const layers::Placeholder<T> &>(*L_tmp.layer);
       Tensor<T>   t;
       t.resize(L.dims());
+      t.acquire(0);
       t.quantizer = L.quantizer();
-      v.push_back(t);
+      v.push_back(std::move(t));
     }
-  }
+  } 
   return v;
 }
 

@@ -54,6 +54,7 @@ protected:
 
 template<typename T> bool Minimum<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   if (in[0] == in[1])
   {

@@ -62,6 +62,7 @@ protected:
 // TODO : check all dims, check loop for optiz
 template<typename T> bool BitShift<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   if (in[0] == in[1])
   {

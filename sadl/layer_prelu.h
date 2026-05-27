@@ -61,6 +61,7 @@ protected:
 
 template<typename T> bool PReLU<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   assert(in[0]->dims() == m_out.dims());
 #if DEBUG_MODEL_ANALYZE

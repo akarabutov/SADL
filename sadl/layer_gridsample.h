@@ -135,6 +135,7 @@ template<typename T> bool GridSample<T>::init(const std::vector<Tensor<T> *> &in
 
 template<typename T> bool GridSample<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   if (m_mode == gridsample_mode_nearest)
     return gridsample_nearest(in);
   else if (m_mode == gridsample_mode_bilinear)

@@ -80,7 +80,6 @@ template<typename T> void infer(const string &filename, int override)
     cerr << "[ERROR] issue during initialization" << endl;
     exit(-1);
   }
-
   if (!model.apply(inputs))
   {
     cerr << "[ERROR] issue during inference" << endl;

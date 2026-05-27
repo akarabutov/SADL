@@ -173,6 +173,7 @@ template<typename T> bool Gather<T>::init(const std::vector<Tensor<T> *> &in)
 
 template<typename T> bool Gather<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   if (!m_initDone)
   {
     std::cerr << "[ERROR] Gather: apply before init\n";

@@ -245,6 +245,7 @@ template<typename T> T Conv2D<T>::input_tempo[dSize][bufSize][bufSize + vectorSi
 // kernel [filter_height, filter_width, in_channels, out_channels]
 template<typename T> bool Conv2D<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
 
   assert(in.size() == 2);
   assert(in[0]->dims().size() == 4);
@@ -490,6 +491,7 @@ template<typename T> bool Conv2D<T>::init(const std::vector<Tensor<T> *> &in)
           Tensor<T> &kernel = *in[1];
           if(in_D % 2 == 0){
               transformedKernel.resize({1, 1, kernel.dims()[3]/2, kernel.dims()[2]*2 });
+              transformedKernel.acquire(0);
               for (int filter_d = 0; filter_d < in_D / 2; filter_d++){
                    for (int filter = 0; filter < nb_filters * 2; filter += 2){
                         transformedKernel(0, 0, filter_d, filter + 0) = kernel(0, 0, filter/2, filter_d*2);
@@ -499,6 +501,7 @@ template<typename T> bool Conv2D<T>::init(const std::vector<Tensor<T> *> &in)
           }
           else{
               transformedKernel.resize({1, 1, kernel.dims()[3], kernel.dims()[2]});
+              transformedKernel.acquire(0);
               for (int filter_d = 0; filter_d < in_D; filter_d++){
                    for (int filter = 0; filter < nb_filters; filter ++){
                         transformedKernel(0, 0, filter_d, filter) = kernel(0, 0, filter, filter_d);
@@ -509,6 +512,7 @@ template<typename T> bool Conv2D<T>::init(const std::vector<Tensor<T> *> &in)
       else if(k_h==3 && k_w==3 && in_D % 2 == 0 && ((nb_filters % 16 == 0) || (nb_filters % 8 == 0 && in_H % (2 * s_h) == 0))){
           Tensor<T> &kernel = *in[1];
           transformedKernel.resize({3, 3, kernel.dims()[3]/2, kernel.dims()[2]*2});
+          transformedKernel.acquire(0);
           for (int ki = 0; ki < 3; ki++){
               for (int kj = 0; kj < 3; kj++){
                   for (int filter_d = 0; filter_d < in_D / 2; filter_d++){

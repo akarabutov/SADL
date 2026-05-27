@@ -56,6 +56,7 @@ protected:
 // assume data in in[0] and shape in in[1]
 template<typename T> bool Transpose<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   Dimensions d = m_out.dims();   // {in[0]->dims()[0], in[0]->dims()[3], in[0]->dims()[1], in[0]->dims()[2]};
 
   const auto &A  = *in[0];
