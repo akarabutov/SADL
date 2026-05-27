@@ -61,6 +61,7 @@ protected:
 
 template<typename T> bool Slice<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   const Tensor<T> &A = *in[0];
   //int              in_H{ A.dims()[1] };

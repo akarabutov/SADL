@@ -59,6 +59,7 @@ protected:
 
 template<typename T> bool ReduceMean<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   result.fill(0);
   const Tensor<T> &A = *in[0];
@@ -161,6 +162,7 @@ template<typename T> bool ReduceMean<T>::init(const std::vector<Tensor<T> *> &in
   m_out.resize(out_dim);
   SADL_DBG(std::cout << "  - output: " << m_out.dims() << std::endl);
   result.resize(out_dim);
+  result.acquire(0);
   result.fill(0);
 
   if (!keepdims)

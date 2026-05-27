@@ -85,6 +85,7 @@ template<typename T> void Depth2Space<T>::process_depth2space(Tensor<T> &in, Ten
 
 template<typename T> bool Depth2Space<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   assert(in[0]->size() == m_out.size());
 

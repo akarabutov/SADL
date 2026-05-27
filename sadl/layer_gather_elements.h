@@ -154,6 +154,7 @@ bool GatherElements<T>::init(const std::vector<Tensor<T> *> &in)
 template<typename T>
 bool GatherElements<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   if (!m_initDone)
   {
     std::cerr << "[ERROR] GatherElements: apply before init\n";

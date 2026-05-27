@@ -53,6 +53,7 @@ protected:
 
 template<typename T> bool Shape<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in); // can be remove if we avoid counting the input as "used" during model apply
   assert(in.size() == 1);
   (void) in;
   // done at init
@@ -67,6 +68,7 @@ template<typename T> bool Shape<T>::init(const std::vector<Tensor<T> *> &in)
   d.resize(1);
   d[0] = in[0]->dims().size();
   m_out.resize(d);
+  m_out.acquire(0);
   for(int i=0;i<in[0]->dims().size();i++) m_out[i]=(T)(in[0]->dims()[i]);
   m_initDone = true;
   return true;

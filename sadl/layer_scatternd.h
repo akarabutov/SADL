@@ -53,6 +53,7 @@ protected:
 
 template<typename T> bool ScatterND<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 3);
   const Tensor<T> &data    = *in[0];
   const Tensor<T> &updates = *in[1];

@@ -55,6 +55,7 @@ protected:
 
 template<typename T> bool Copy<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   assert(in[0]->dims() == m_out.dims());
   std::copy(in[0]->begin(), in[0]->end(), m_out.begin());

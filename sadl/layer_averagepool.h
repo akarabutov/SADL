@@ -62,6 +62,7 @@ protected:
 // stride [1, stride_height, stride_width, 1]
 template<typename T> bool AveragePool<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   assert(in[0]->dims().size() == 4);
 

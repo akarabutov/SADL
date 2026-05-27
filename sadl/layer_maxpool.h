@@ -65,6 +65,7 @@ protected:
 
 template<typename T> bool MaxPool<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
 
 #if __AVX2__
   const int        D            = m_out.dims()[3];

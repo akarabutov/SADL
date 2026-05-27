@@ -60,6 +60,7 @@ protected:
 // TODO : check all dims, check loop for optiz
 template<typename T> bool Clip<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 3);
   const int        shift_in{ in[0]->quantizer };
   const int        shift_min{ in[1]->quantizer };
@@ -117,6 +118,7 @@ template<typename T> bool Clip<T>::init(const std::vector<Tensor<T> *> &in)
   // of add if same dimensions
   m_out.resize(in[0]->dims());
   m_limits.resize({2});
+  m_limits.acquire(0);
   m_initDone = true;
   return true;
 }

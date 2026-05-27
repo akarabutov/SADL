@@ -3,7 +3,7 @@
  * and contributor rights, including patent rights, and no such rights are
  * granted under this license.
  *
- * Copyright (c) 2010-2023, ITU/ISO/IEC
+ * Copyright (c) 2010-2026, ITU/ISO/IEC
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,98 +31,253 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 #pragma once
+#include "options.h"
 #include <algorithm>
+#include <cstring>
 #include <cstdlib>
-#if _WIN32 || __USE_ISOC11
-#include <malloc.h>
-#else
-#include <malloc/malloc.h>
-#endif
 #include <numeric>
 #include <vector>
 #include <limits>
+#include <memory>
+#include <new>
+#include <type_traits>
 #include <utility>
-#include "options.h"
 
 #include "dimensions.h"
 
 namespace sadl
 {
-// tensor between layers: depth height width (or width height?)
-template<typename T, std::size_t Alignment> struct aligned_allocator
-{
-  using pointer         = T *;
-  using const_pointer   = const T *;
-  using reference       = T &;
-  using const_reference = const T &;
-  using value_type      = T;
-  using size_type       = std::size_t;
-  using difference_type = std::ptrdiff_t;
-
-  pointer       address(reference r) const { return &r; }
-  const_pointer address(const_reference s) const { return &s; }
-  size_type     max_size() const { return (static_cast<std::size_t>(0) - static_cast<std::size_t>(1)) / sizeof(T); }
-  template<typename U> struct rebind
-  {
-    typedef aligned_allocator<U, Alignment> other;
-  };
-
-  bool operator!=(const aligned_allocator &other) const { return !(*this == other); }
-  void construct(pointer p, const_reference t) const
-  {
-    void *const pv = static_cast<void *>(p);
-    new (pv) T(t);
-  }
-  void destroy(T *const p) const { p->~T(); }
-  bool operator==(const aligned_allocator & /*other*/) const { return true; }
-
-  aligned_allocator()                          = default;
-  aligned_allocator(const aligned_allocator &) = default;
-  ~aligned_allocator()                         = default;
-  aligned_allocator &operator=(const aligned_allocator &) = delete;
-
-  template<typename U> aligned_allocator(const aligned_allocator<U, Alignment> &) {}
-
-  pointer allocate(const std::size_t n) const
-  {
-    if (n == 0)
-      return nullptr;
-    size_t s = ((n * sizeof(T) + Alignment - 1) / Alignment) * Alignment;
-
-#if _WIN32
-#if __MINGW32__
-    void *const pv = __mingw_aligned_malloc(s, Alignment);
-#else
-    void *const pv = _aligned_malloc(s, Alignment);
-#endif
-#else
-#if __USE_ISOC11
-    void *const pv = aligned_alloc(Alignment, s);
-#else
-    void *pv = nullptr;
-    if (posix_memalign(&pv, Alignment, s))
-    {
-      throw std::bad_alloc();
-    }
-#endif
-#endif
-
-    if (!pv)
-      throw std::bad_alloc();
-    return static_cast<T *>(pv);
-  }
-
-#ifdef _WIN32
-  void deallocate(T *const p, const std::size_t n) const { _aligned_free(p); }
-#else
-  void deallocate(T *const p, const std::size_t /*n*/) const { free(p); }
-#endif
-
-  template<typename U> pointer allocate(const std::size_t n, const U * /* const hint */) const { return allocate(n); }
-};
-
 template<typename T> struct ComputationType
 {
+};
+
+template<typename T, std::size_t Alignment> class MemoryPool
+{
+public:
+  using value_type = T;
+  using size_type  = std::size_t;
+
+  value_type *allocate(size_type length, size_type tensor_id)
+  {
+    (void) tensor_id;
+    if (length == 0)
+      return nullptr;
+    return static_cast<value_type *>(::operator new[](length * sizeof(value_type), std::align_val_t(Alignment)));
+  }
+
+  void deallocate(value_type *ptr, size_type length, size_type tensor_id) noexcept
+  {
+    (void) length;
+    (void) tensor_id;
+    if (ptr != nullptr)
+      ::operator delete[](ptr, std::align_val_t(Alignment));
+    ptr=nullptr;  
+  }
+};
+
+template<typename T, std::size_t Alignment> inline MemoryPool<T, Alignment> g_memory_pool;
+
+template<typename T, std::size_t Alignment> class TensorData
+{
+public:
+  static constexpr bool kPersistentByDefault = !SADL_USE_MEMORY_POOL;
+  using value_type      = T;
+  using size_type       = std::size_t;
+  using iterator        = value_type *;
+  using const_iterator  = const value_type *;
+
+  TensorData()
+  {
+    static_assert(std::is_pod<value_type>::value, "TensorData requires POD value_type");
+  }
+  ~TensorData() { deallocate_only(); }
+
+  TensorData(const TensorData &other): m_id(next_id()) { copy_from(other); }
+  TensorData(TensorData &&other) noexcept: m_id(next_id()) { move_from(std::move(other)); }
+
+  TensorData &operator=(const TensorData &other)
+  {
+    if (this != &other)
+    {
+      TensorData tmp(other);
+      swap(tmp);
+    }
+    return *this;
+  }
+
+  TensorData &operator=(TensorData &&other) noexcept
+  {
+    if (this != &other)
+    {
+      deallocate_only();
+      move_from(std::move(other));
+    }
+    return *this;
+  }
+
+  size_type size() const { return m_size; }
+  bool      empty() const { return m_size == 0; }
+  void      clear()
+  {
+    m_size = 0;
+  }
+  void      resize(size_type n)
+  {
+    m_size = n;
+    if (m_ref_count != 0) {
+      ensure_allocated();
+    }
+  }
+
+  value_type *      data() { return m_data; }
+  const value_type *data() const { return m_data; }
+
+  iterator       begin() { return m_data; }
+  const_iterator begin() const { return m_data; }
+  iterator       end() { return m_size == 0 ? m_data : m_data + m_size; }
+  const_iterator end() const { return m_size == 0 ? m_data : m_data + m_size; }
+
+  value_type &      operator[](size_type i) { return m_data[i]; }
+  const value_type &operator[](size_type i) const { return m_data[i]; }
+  size_type         id() const { return m_id; }
+  bool              isPersistent() const { return m_ref_count < 0; }
+  void              acquire(int n = 1)
+  {
+    if constexpr (kPersistentByDefault)
+    {
+      (void) n;
+      m_ref_count = -1;
+      ensure_allocated();
+    }
+    else
+    {
+      if (n == 0)
+      {
+        m_ref_count = -1;
+        ensure_allocated();
+        return;
+      }
+      if (m_ref_count < 0) // avoid changing type of persistent tensor
+      {
+        ensure_allocated();
+        return;
+      }
+      if (n > 0)
+        m_ref_count += n;
+      ensure_allocated();
+    }
+  }
+  void              release(bool force = false)
+  {
+    if (force)
+    {
+      if constexpr (kPersistentByDefault) {
+        return;
+      }
+      m_ref_count = 0;      
+      if (m_data != nullptr)
+      {
+        memory_pool().deallocate(m_data, m_allocated_capacity, m_id);
+        m_data = nullptr;
+        m_allocated_capacity = 0;
+      }
+      return;
+    }
+    if (m_ref_count <= 0)
+      return;
+    --m_ref_count;
+    if (m_ref_count == 0)
+    {
+      memory_pool().deallocate(m_data, m_allocated_capacity, m_id);
+      m_data = nullptr;
+      m_allocated_capacity = 0;
+    }
+  }
+
+  void swap(TensorData &other) noexcept
+  {
+    std::swap(m_data, other.m_data);
+    std::swap(m_size, other.m_size);
+    std::swap(m_allocated_capacity, other.m_allocated_capacity);
+    // do not swap id or ref count
+  }
+  friend void swap(TensorData &lhs, TensorData &rhs) noexcept { lhs.swap(rhs); }
+
+  static int32_t next_id() {  return s_next_id++; }
+  static MemoryPool<value_type, Alignment> &memory_pool() { return g_memory_pool<value_type, Alignment>; }
+
+  void deallocate_only() noexcept
+  {
+    memory_pool().deallocate(m_data, m_allocated_capacity, m_id);
+    m_data               = nullptr;
+    m_size               = 0;
+    m_allocated_capacity = 0;
+    if constexpr (kPersistentByDefault)
+    {
+      m_ref_count = -1;
+    }
+    else
+    {
+      m_ref_count = 0;
+    }
+  }
+
+  void move_from(TensorData &&other) noexcept
+  {
+    m_data               = other.m_data;
+    m_size               = other.m_size;
+    m_allocated_capacity = other.m_allocated_capacity;
+    m_ref_count          = other.m_ref_count;
+    m_id                       = other.m_id;
+    other.m_data               = nullptr;
+    other.m_size               = 0;
+    other.m_allocated_capacity = 0;
+    if constexpr (kPersistentByDefault)
+    {
+      other.m_ref_count = -1;
+    }
+    else
+    {
+      other.m_ref_count = 0;
+    }
+    other.m_id                 = 0;
+  }
+
+  void copy_from(const TensorData &other)
+  {
+    assert(m_data==nullptr);
+    m_size              = other.m_size;
+    if (other.m_size == 0 || other.m_data == nullptr)
+      return;
+    m_data = memory_pool().allocate(other.m_size, m_id);
+    std::memcpy(m_data, other.m_data, other.m_size * sizeof(value_type));
+    m_allocated_capacity = other.m_size;
+    m_ref_count = other.m_ref_count; // for safety
+  }
+
+  void ensure_allocated()
+  {
+    if (m_size == 0)
+      return;
+    if (m_data == nullptr)
+    {
+      m_data = memory_pool().allocate(m_size, m_id);
+      m_allocated_capacity = m_size;
+      return;
+    }
+    if (m_allocated_capacity >= m_size)
+      return;
+    memory_pool().deallocate(m_data, m_allocated_capacity, m_id);
+    m_data  = memory_pool().allocate(m_size, m_id);
+    m_allocated_capacity = m_size;
+  }
+
+  value_type *m_data               = nullptr;
+  size_type   m_size               = 0;
+  size_type   m_allocated_capacity = 0;
+  int32_t     m_ref_count          = -1;
+  int32_t     m_id                 = next_id();
+  inline static int32_t s_next_id{ 0 };
 };
 
 // predecl for friendness
@@ -139,7 +294,8 @@ template<typename T> class Tensor
 {
 public:
   using value_type     = T;
-  using Data           = std::vector<value_type, aligned_allocator<value_type, 64>>;
+  static constexpr bool kPersistentByDefault = TensorData<value_type, 64>::kPersistentByDefault;
+  using Data           = TensorData<value_type, 64>;
   using iterator       = typename Data::iterator;
   using const_iterator = typename Data::const_iterator;
 #if SPARSE_SUPPORT
@@ -150,6 +306,9 @@ public:
   explicit Tensor(Dimensions d);
 
   void resize(Dimensions d);
+  void acquire(int n = 1) { m_data.acquire(n); }
+  void release(bool force = false) { m_data.release(force); }
+  bool isPersistent() const { return m_data.isPersistent(); }
 #if SPARSE_SUPPORT
   void resizeSparse(Dimensions d, int32_t sizeSparse, int32_t packedSparsitySize);
 #endif
@@ -598,7 +757,8 @@ template<> struct ComputationType<int16_t>
 template<typename T> void swap(Tensor<T> &t0, Tensor<T> &t1)
 {
   std::swap(t0.m_dims, t1.m_dims);
-  std::swap(t0.m_data, t1.m_data);
+  using std::swap;
+  swap(t0.m_data, t1.m_data);
   std::swap(t0.quantizer, t1.quantizer);
 #if SPARSE_SUPPORT
   std::swap(t0.m_data_sparse, t1.m_data_sparse);
@@ -608,7 +768,8 @@ template<typename T> void swap(Tensor<T> &t0, Tensor<T> &t1)
 template<typename T> void swapData(Tensor<T> &t0, Tensor<T> &t1)
 {
   assert(t0.size() == t1.size());
-  std::swap(t0.m_data, t1.m_data);
+  using std::swap;
+  swap(t0.m_data, t1.m_data);
   std::swap(t0.quantizer, t1.quantizer);
 #if SPARSE_SUPPORT
   std::swap(t0.m_data_sparse, t1.m_data_sparse);
@@ -782,6 +943,7 @@ template<typename T> T Tensor<T>::operator()(int i, int j, int k, int l) const
 
 template<typename T> void Tensor<T>::fill(value_type value)
 {
+  acquire();
 #if SPARSE_SUPPORT
   m_data_sparse.clear();
 #endif

@@ -59,6 +59,7 @@ protected:
 
 template<typename T> bool Relu<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   assert(in[0]->dims() == m_out.dims());
   swap(*in[0], m_out);
@@ -69,6 +70,7 @@ template<typename T> bool Relu<T>::apply(std::vector<Tensor<T> *> &in)
 
 template<> inline bool Relu<int16_t>::apply(std::vector<Tensor<int16_t> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   assert(in[0]->dims() == m_out.dims());
   swap(*in[0], m_out);
@@ -109,6 +111,7 @@ template<> inline bool Relu<int16_t>::apply(std::vector<Tensor<int16_t> *> &in)
 
 template<> inline bool Relu<int32_t>::apply(std::vector<Tensor<int32_t> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   assert(in[0]->dims() == m_out.dims());
   swap(*in[0], m_out);

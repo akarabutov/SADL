@@ -83,7 +83,8 @@ template<typename T> bool GlobalAveragePool<T>::init(const std::vector<Tensor<T>
 
   m_out.resize({ Nn, 1, 1, C });
   result.resize(m_out.dims());
-
+  result.acquire(0);
+  
   cnt = H * W;
 
   acc_bits = (int) std::ceil(std::log2((double)cnt));
@@ -112,6 +113,7 @@ template<typename T> bool GlobalAveragePool<T>::init(const std::vector<Tensor<T>
 
 template<typename T> bool GlobalAveragePool<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 1);
   const Tensor<T> &A = *in[0];
   assert(A.dims().size() == 4);

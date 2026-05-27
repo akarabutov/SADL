@@ -79,6 +79,7 @@ protected:
 // kernel [filter_height, filter_width, in_channels, out_channels]
 template<typename T> bool Conv2DTranspose<T>::apply(std::vector<Tensor<T> *> &in)
 {
+  auto scope = makeLayerExecutionScope(m_out, in);
   assert(in.size() == 2);
   assert(in[0]->dims().size() == 4);
   assert(in[1]->dims().size() == 4);
@@ -240,6 +241,7 @@ template<typename T> bool Conv2DTranspose<T>::init(const std::vector<Tensor<T> *
   dim[1] += half_size * 2;
   dim[2] += half_size * 2;
   m_tempo.resize(dim);
+  m_tempo.acquire(0);
   m_initDone = true;
   return true;
 }
