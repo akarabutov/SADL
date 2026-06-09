@@ -332,7 +332,7 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
               conv2d_3x3_s_g1_core_dispatch<s_h, s_w, 0, 0>(A, kernel);
               return true;
           }
-          else if (m_pads[0] == 1 && m_pads[1] == 1)
+          else
           {
               // skip border
               conv2d_3x3_s_g1_core_dispatch<s_h, s_w, 1, 1>(A, kernel);
@@ -351,7 +351,7 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
             conv2d_3x3_s_g2_core_dispatch<s_h, s_w, 0, 0>(A, kernel);
             return true;
         }
-        else if (m_pads[0] == 1 && m_pads[1] == 1)
+        else
         {
             // skip border
             conv2d_3x3_s_g2_core_dispatch<s_h, s_w, 1, 1>(A, kernel);
