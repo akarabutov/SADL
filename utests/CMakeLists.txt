@@ -10,12 +10,17 @@ include_directories(..)
 add_executable(test_scalar  test.cpp ${HEADER_FILES})
 add_executable(test_avx2    test.cpp ${HEADER_FILES})
 add_executable(test_avx512  test.cpp ${HEADER_FILES})
+add_executable(test_avx2_mempool    test.cpp ${HEADER_FILES})
+add_executable(test_avx2_sparse    test.cpp ${HEADER_FILES})
+
 if( UNIX OR MINGW )
  set(CMAKE_CXX_FLAGS_RELEASE "-O3")
  set(CMAKE_CXX_FLAGS "-ffast-math -Wall -fstrict-aliasing") 
  set_target_properties(test_scalar PROPERTIES COMPILE_FLAGS "" )
  set_target_properties(test_avx2   PROPERTIES COMPILE_FLAGS "-mavx2 -DNDEBUG=1" )
  set_target_properties(test_avx512 PROPERTIES COMPILE_FLAGS "-mavx512f -mavx512bw -mavx512dq -DNDEBUG=1" )
+ set_target_properties(test_avx2_mempool PROPERTIES COMPILE_FLAGS "-mavx2 -DNDEBUG=1 -DSADL_USE_MEMORY_POOL=1" )
+ set_target_properties(test_avx2_sparse PROPERTIES COMPILE_FLAGS "-mavx2 -DNDEBUG=1 -DSPARSE_SUPPORT=1")
 endif()
 
 

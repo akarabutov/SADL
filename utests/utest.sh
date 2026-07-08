@@ -79,3 +79,21 @@ else
   exit -1;  
 fi;
 
+${BDIR}/build/test_avx2_mempool ${BNAME}.sadl ${BNAME}.results 0.001 > $BLACKHOLE
+E=$?;
+if (( E == 0 )); then
+  echo -e "   \e[32m[PASS]\e[0m $BNAME avx2 mempool"
+else
+  echo -e "   \e[31m[FAIL]\e[0m $BNAME avx2 mempool"
+  exit -1;
+fi;
+
+${BDIR}/build/test_avx2_sparse ${BNAME}.sadl ${BNAME}.results 0.001 > $BLACKHOLE
+E=$?;
+if (( E == 0 )); then
+  echo -e "   \e[32m[PASS]\e[0m $BNAME avx2 sparse"
+else
+  echo -e "   \e[31m[FAIL]\e[0m $BNAME avx2 sparse"
+  exit -1;
+fi;
+
