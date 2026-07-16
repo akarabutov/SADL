@@ -573,6 +573,23 @@ template<typename T> bool Model<T>::init(std::vector<Tensor<T>> &in)
     }
     if (m_data[layer_cnt].layer->op() != layers::OperationType::Const)
       m_data[layer_cnt].layer->output().release(true);
+    if (m_data[layer_cnt].layer->op() == layers::OperationType::Conv2D)
+    {
+      auto *conv = dynamic_cast<layers::Conv2D<T> *>(m_data[layer_cnt].layer.get());
+      if (conv == nullptr)
+      {
+          std::cerr << "[ERROR] Conv2D cast failed on layer " << m_data[layer_cnt].layer->id() << std::endl;
+          return false;
+      }
+      if (m_data[layer_cnt].layer->inputsId().size() != 2)
+      {
+          std::cerr << "[ERROR] Conv2D should have 2 inputs on layer " << m_data[layer_cnt].layer->id() << std::endl;
+          return false;
+      }
+    
+      auto &kernelSrc = getLayer(m_data[layer_cnt].layer->inputsId()[1]);
+      conv->setCanCacheTransformedKernel(kernelSrc.layer->op() == layers::OperationType::Const);
+    }
     ok &= m_data[layer_cnt].layer->init(m_data[layer_cnt].inputs);
     SADL_DBG(std::cout << "[INFO] init layer " << m_data[layer_cnt].layer->id() << ' '
                        << layers::opName((layers::OperationType::Type) (m_data[layer_cnt].layer->op())) << ' ' << m_data[layer_cnt].layer->name() << " in=[");
@@ -668,7 +685,6 @@ template<typename T> bool Model<T>::apply(std::vector<Tensor<T>> &in)
 #if DEBUG_VALUES || DEBUG_MODEL
   std::cout << "[INFO] == start model inference ==" << std::endl;
 #endif
-
   assert(!m_data.empty());
   assert((int) in.size() == m_nb_inputs);
   // should be ok in order (take care of that on python side)
@@ -1078,6 +1094,10 @@ template<typename T> void Model<T>::reshapeConv2DFilters()
         continue;
       }
       auto &L = getLayer(v.layer->inputsId()[1]);
+      if (L.layer->op() != layers::OperationType::Const)
+      {
+        continue;
+      }
       auto &W = L.layer->output();
       // invert k and l dimensions
       Dimensions d = W.dims();
@@ -1121,7 +1141,7 @@ template<typename T> std::vector<Tensor<T>> Model<T>::getInputsTemplate() const
       t.quantizer = L.quantizer();
       v.push_back(std::move(t));
     }
-  } 
+  }
   return v;
 }
 

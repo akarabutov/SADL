@@ -69,6 +69,12 @@ template<typename T> bool Copy<T>::init(const std::vector<Tensor<T> *> &in)
   if (in.size() != 1)
     return false;
   m_out.resize(in[0]->dims());
+  if (in[0]->data() != nullptr)
+  {
+    m_out.acquire(0);
+    std::copy(in[0]->begin(), in[0]->end(), m_out.begin());
+    m_out.quantizer = in[0]->quantizer;
+  }
   m_initDone = true;
   return true;
 }

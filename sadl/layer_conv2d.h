@@ -52,6 +52,8 @@ public:
   virtual bool apply(std::vector<Tensor<T> *> &in) override;
   virtual bool init(const std::vector<Tensor<T> *> &in) override;
 
+  void setCanCacheTransformedKernel(bool v) { m_canCacheTransformedKernel = v; }
+
 protected:
   virtual bool loadInternal(std::istream &file, Version /*v*/) override;
   Dimensions   m_strides;
@@ -59,7 +61,10 @@ protected:
   int          m_q      = 0;
   int          m_groups = 1;
   Tensor<T> transformedKernel;
-
+  bool m_canCacheTransformedKernel = false;
+  void pack_transformed_kernel_1x1(const Tensor<T> &kernel);
+  void pack_transformed_kernel_3x3(const Tensor<T> &A, const Tensor<T> &kernel);
+  void refreshRuntimeTransformedKernelIfNeeded(const Tensor<T> &A, const Tensor<T> &kernel);
   template<int s_h, int s_w> bool apply_s(const Tensor<T> &A, const Tensor<T> &kernel);
 
   // should never be used
@@ -213,7 +218,6 @@ protected:
     assert(false);
     exit(-1);
   }
-
   template<int in_D, int ihalf_size, int jhalf_size,int o_i,int o_j> void simd16_conv2d_ixj_s11_g1_d_core(const Tensor<T> &A, const Tensor<T> &kernel) {
     conv2d_ixj_s11_g1_d_core<in_D,ihalf_size,jhalf_size, o_i, o_j>(A,kernel);
 
@@ -305,6 +309,137 @@ template<typename T> bool Conv2D<T>::apply(std::vector<Tensor<T> *> &in)
   return false;
 }
 
+template<typename T>
+inline void Conv2D<T>::pack_transformed_kernel_1x1(const Tensor<T> &kernel)
+{
+  const int k_h{ kernel.dims()[0] };
+  const int k_w{ kernel.dims()[1] };
+  const int nb_filters{ kernel.dims()[2] };
+  const int in_D{ kernel.dims()[3] };
+
+  transformedKernel = Tensor<T>{};
+
+  // same fast-path eligibility as the existing 1x1 transformed path
+  if (m_groups != 1 || k_h != 1 || k_w != 1)
+    return;
+
+  if (nb_filters % 16 != 0)
+    return;
+
+  if ((m_strides[1] != 1) || (m_strides[2] != 1))
+    return;
+
+  // even in_D -> d2 packed form
+  if ((in_D & 1) == 0)
+  {
+    transformedKernel.resize({1, 1, in_D >> 1, nb_filters << 1});
+
+    for (int dst_d = 0, src_d = 0; src_d < in_D; ++dst_d, src_d += 2)
+    {
+      for (int dst_f = 0, src_f = 0; src_f < nb_filters; ++src_f, dst_f += 2)
+      {
+        transformedKernel(0, 0, dst_d, dst_f + 0) = kernel(0, 0, src_f, src_d + 0);
+        transformedKernel(0, 0, dst_d, dst_f + 1) = kernel(0, 0, src_f, src_d + 1);
+      }
+    }
+  }
+  // odd in_D -> d1 packed form
+  else
+  {
+    transformedKernel.resize({1, 1, in_D, nb_filters});
+
+    for (int dst_d = 0; dst_d < in_D; ++dst_d)
+    {
+      for (int dst_f = 0; dst_f < nb_filters; ++dst_f)
+      {
+        transformedKernel(0, 0, dst_d, dst_f) = kernel(0, 0, dst_f, dst_d);
+      }
+    }
+  }
+
+  return;
+}
+
+template<typename T>
+inline void Conv2D<T>::pack_transformed_kernel_3x3(const Tensor<T> &A, const Tensor<T> &kernel)
+{
+  const int k_h{ kernel.dims()[0] };
+  const int k_w{ kernel.dims()[1] };
+  const int nb_filters{ kernel.dims()[2] };
+  const int in_D{ kernel.dims()[3] };
+  const int in_H{ A.dims()[1] };
+
+  transformedKernel = Tensor<T>{};
+
+  if (m_groups != 1 || k_h != 3 || k_w != 3)
+    return;
+
+  if ((m_strides[1] != 1) || (m_strides[2] != 1))
+    return;
+
+  if ((in_D & 1) != 0)
+    return;
+
+  if (!(((nb_filters & 15) == 0) || (((nb_filters & 7) == 0) && ((in_H & 1) == 0))))
+    return;
+
+  transformedKernel.resize({3, 3, in_D >> 1, nb_filters << 1});
+
+  for (int ki = 0; ki < 3; ++ki)
+  {
+    for (int kj = 0; kj < 3; ++kj)
+    {
+      for (int filter_d = 0; filter_d < (in_D >> 1); ++filter_d)
+      {
+        for (int filter = 0; filter < (nb_filters << 1); filter += 2)
+        {
+          transformedKernel(ki, kj, filter_d, filter + 0) =
+              kernel(ki, kj, filter >> 1, (filter_d << 1) + 0);
+          transformedKernel(ki, kj, filter_d, filter + 1) =
+              kernel(ki, kj, filter >> 1, (filter_d << 1) + 1);
+        }
+      }
+    }
+  }
+}
+
+template<typename T>
+inline void Conv2D<T>::refreshRuntimeTransformedKernelIfNeeded(const Tensor<T> &A, const Tensor<T> &kernel)
+{
+    if (m_canCacheTransformedKernel)
+        return;
+
+#if __AVX2__
+    if constexpr (std::is_same_v<T, int16_t>)
+  {
+    const int k_h{ kernel.dims()[0] };
+    const int k_w{ kernel.dims()[1] };
+
+    if (k_h == 1 && k_w == 1)
+    {
+        pack_transformed_kernel_1x1(kernel);
+      return;
+    }
+
+    if (k_h == 3 && k_w == 3)
+    {
+      pack_transformed_kernel_3x3(A, kernel);
+      return;
+    }
+
+    transformedKernel = Tensor<T>{};
+    }
+    else
+    {
+        transformedKernel = Tensor<T>{};
+    }
+#else
+  (void)A;
+  (void)kernel;
+    transformedKernel = Tensor<T>{};
+#endif
+}
+
 template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Tensor<T> &A, const Tensor<T> &kernel)
 {
   const int k_size_h{ kernel.dims()[0] };
@@ -319,6 +454,7 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
   {
       if (k_size_h == 1 && k_size_w == 1)   // 1x1
       {
+          refreshRuntimeTransformedKernelIfNeeded(A, kernel);
           conv2d_1x1_s_dispatch<s_h, s_w>(A, kernel);
           return true;
       }
@@ -327,6 +463,7 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
       {
           if (m_pads[0] != 0 || m_pads[1] != 0)
           {
+              refreshRuntimeTransformedKernelIfNeeded(A, kernel);
               conv2d_3x3_s_peel<s_h, s_w>(A, kernel);
              // conv2d_ixj_s_peel<s_h,s_w>(A,kernel); //
               conv2d_3x3_s_g1_core_dispatch<s_h, s_w, 0, 0>(A, kernel);
@@ -334,6 +471,7 @@ template<typename T> template<int s_h, int s_w> bool Conv2D<T>::apply_s(const Te
           }
           else
           {
+              refreshRuntimeTransformedKernelIfNeeded(A, kernel);
               // skip border
               conv2d_3x3_s_g1_core_dispatch<s_h, s_w, 1, 1>(A, kernel);
               return true;
@@ -489,47 +627,20 @@ template<typename T> bool Conv2D<T>::init(const std::vector<Tensor<T> *> &in)
 
   m_out.resize(dim);
 
-  if(transformedKernel.size() == 0 && m_groups==1){
-      // Keep 1x1 transformed layout limited to stride-1 path.
+  if (!m_canCacheTransformedKernel)
+  {
+    transformedKernel = Tensor<T>{};
+  }
+
+  if (m_canCacheTransformedKernel && transformedKernel.size() == 0 && m_groups == 1 && s_h == 1 && s_w == 1){
       const int     nb_filters{ in[1]->dims()[2] };
-      const int     in_D{ in[1]->dims()[3] };
-      if(s_h==1 && s_w==1 && nb_filters % 16 == 0 && k_h==1 && k_w==1){
-          Tensor<T> &kernel = *in[1];
-          if(in_D % 2 == 0){
-              transformedKernel.resize({1, 1, kernel.dims()[3]/2, kernel.dims()[2]*2 });
-              transformedKernel.acquire(0);
-              for (int filter_d = 0; filter_d < in_D / 2; filter_d++){
-                   for (int filter = 0; filter < nb_filters * 2; filter += 2){
-                        transformedKernel(0, 0, filter_d, filter + 0) = kernel(0, 0, filter/2, filter_d*2);
-                        transformedKernel(0, 0, filter_d, filter + 1) = kernel(0, 0, filter/2, filter_d*2+1);
-                   }
-              }
-          }
-          else{
-              transformedKernel.resize({1, 1, kernel.dims()[3], kernel.dims()[2]});
-              transformedKernel.acquire(0);
-              for (int filter_d = 0; filter_d < in_D; filter_d++){
-                   for (int filter = 0; filter < nb_filters; filter ++){
-                        transformedKernel(0, 0, filter_d, filter) = kernel(0, 0, filter, filter_d);
-                   }
-              }
-          }
+      if (nb_filters % 16 == 0 && k_h == 1 && k_w == 1)
+      {
+          pack_transformed_kernel_1x1(*in[1]);
       }
-      else if(k_h==3 && k_w==3 && in_D % 2 == 0 && ((nb_filters % 16 == 0) || (nb_filters % 8 == 0 && in_H % (2 * s_h) == 0))){
-          Tensor<T> &kernel = *in[1];
-          transformedKernel.resize({3, 3, kernel.dims()[3]/2, kernel.dims()[2]*2});
-          transformedKernel.acquire(0);
-          for (int ki = 0; ki < 3; ki++){
-              for (int kj = 0; kj < 3; kj++){
-                  for (int filter_d = 0; filter_d < in_D / 2; filter_d++){
-                       for (int filter = 0; filter < nb_filters * 2; filter += 2)
-                       {
-                            transformedKernel(ki, kj, filter_d, filter + 0) = kernel(ki, kj, filter/2, filter_d*2);
-                            transformedKernel(ki, kj, filter_d, filter + 1) = kernel(ki, kj, filter/2, filter_d*2+1);
-                       }
-                  }
-              }
-          }
+      else if (k_h == 3 && k_w == 3)
+      {
+          pack_transformed_kernel_3x3(*in[0], *in[1]);
       }
   }
 

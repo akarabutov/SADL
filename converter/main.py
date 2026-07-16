@@ -467,6 +467,26 @@ def extract_dim_by_name(name, onnx_graph):
 
     quit("[ERROR] unable to extract dim values in {}".format(name))
 
+def try_extract_dim_by_name(name, onnx_graph):
+    try:
+        return extract_dim_by_name(name, onnx_graph)
+    except SystemExit:
+        return None
+
+def should_insert_4d_transpose(name, model_onnx):
+    dims = try_extract_dim_by_name(name, model_onnx.graph)
+    if dims is not None:
+        return len(dims) == 4
+
+    n = getNodesWithOutputNotConst(name, model_onnx)
+    if n is None:
+        return True
+
+    if hasattr(n, "type") and hasattr(n.type, "tensor_type"):
+        return len(n.type.tensor_type.shape.dim) == 4
+
+    return True
+
 # get the nodes with name as input
 def getNodesWithInput(name, model):
     L = []
@@ -545,12 +565,11 @@ def add_transpose_to_input(
         node_annotation[node.input[i]].to_transpose = True
         return node.input[i]
 
-    n2 = getNodesWithOutputNotConst(node.input[i], model_onnx)
-    if hasattr(n2, "type") and hasattr(n2.type, "tensor_type"):
-        if len(n2.type.tensor_type.shape.dim) != 4:
-            quit(f"[WARNING] cannot transpose tensor with dim !=4")
-            return node.input[i]
 
+    if not should_insert_4d_transpose(node.input[i], model_onnx):
+        return node.input[i]
+
+          
     in_node = node.input[i]
     reshape_coef_name = in_node + "_COEF_TRANSPOSE_NOT_IN_GRAPH"
     myGraph[reshape_coef_name] = {}
@@ -580,18 +599,19 @@ def add_transpose_to_input(
     return nname
 
 
-def add_transpose_to_output(node, myGraph, map_onnx_to_myGraph):
+def add_transpose_to_output(node, myGraph, map_onnx_to_myGraph, model_onnx):
     # Transpose inserted
     # Const
+    if not should_insert_4d_transpose(node.output[0], model_onnx):
+        return node.output[0]
+
     reshape_coef_name = node.output[0] + "_COEF_TRANSPOSE_AFTER_NOT_IN_GRAPH"
     myGraph[reshape_coef_name] = {}
     myGraph[reshape_coef_name]["op_type"] = OPTYPE.Const
     myGraph[reshape_coef_name]["inputs"] = []
     additional = {}
     additional["dims"] = [4]
-    additional["raw_data"] = np.array(
-        [0, 2, 3, 1], dtype=np.int32
-    ).tobytes()  # nchw -> nhwc
+    additional["raw_data"] = np.array([0, 2, 3, 1], dtype=np.int32).tobytes()
     additional["dtype"] = DTYPE_SADL.INT32
     additional["data"] = node
     myGraph[reshape_coef_name]["additional"] = additional
@@ -612,7 +632,152 @@ def find_init_vals_in_graph(graph, data_name):
             ans.append(node)
     return ans 
 
+def is_static_tensor_source(name, model_onnx):
+    # No Identity handling: initializer or direct Constant only.
+    if getInitializer(name, model_onnx) is not None:
+        return True
 
+    n = getNodesWithOutput(name, model_onnx)
+    return n is not None and hasattr(n, "op_type") and n.op_type == "Constant"
+
+
+def is_used_as_conv_weight(name, model_onnx):
+    for consumer in getNodesWithInput(name, model_onnx):
+        if consumer.op_type == "Conv" and len(consumer.input) > 1:
+            if consumer.input[1] == name:
+                return True
+    return False
+
+
+def get_constant_ints(name, model_onnx):
+    t = getInitializer(name, model_onnx)
+    if t is None:
+        n = getNodesWithOutput(name, model_onnx)
+        if n is None or not hasattr(n, "op_type") or n.op_type != "Constant":
+            return None
+        a = getAttribute(n, "value")
+        if a is None or a.t is None:
+            return None
+        t = a.t
+
+    if t.data_type == DTYPE_ONNX.INT64:
+        x = np.frombuffer(t.raw_data, dtype=np.int64)
+        if len(x) == 0:
+            x = np.asarray(t.int64_data, dtype=np.int64)
+        return [int(v) for v in x.tolist()]
+
+    if t.data_type == DTYPE_ONNX.INT32:
+        x = np.frombuffer(t.raw_data, dtype=np.int32)
+        if len(x) == 0:
+            x = np.asarray(t.int32_data, dtype=np.int32)
+        return [int(v) for v in x.tolist()]
+
+    raise ValueError(f"Expected INT64/INT32 constant for {name}")
+
+
+def get_conv_weight_oikhkw_dims(name, model_onnx):
+    # direct initializer
+    init = getInitializer(name, model_onnx)
+    if init is not None:
+        return [int(x) for x in init.dims]
+
+    # direct Constant
+    prod = getNodesWithOutput(name, model_onnx)
+    if prod is None:
+        return None
+
+    if hasattr(prod, "op_type") and prod.op_type == "Constant":
+        a = getAttribute(prod, "value")
+        if a is not None and a.t is not None:
+            return [int(x) for x in a.t.dims]
+        return None
+
+    # common dynamic-conv case
+    if hasattr(prod, "op_type") and prod.op_type == "Reshape":
+        if len(prod.input) < 2:
+            return None
+        return get_constant_ints(prod.input[1], model_onnx)
+
+    return None
+
+
+def add_explicit_transpose(value_name, perm, suffix, myGraph, map_onnx_to_myGraph, owner_node):
+    coef_name = value_name + suffix + "_COEF"
+    myGraph[coef_name] = {}
+    myGraph[coef_name]["op_type"] = OPTYPE.Const
+    myGraph[coef_name]["inputs"] = []
+    myGraph[coef_name]["additional"] = {
+        "dims": [len(perm)],
+        "raw_data": np.array(perm, dtype=np.int32).tobytes(),
+        "dtype": DTYPE_SADL.INT32,
+        "data": owner_node,
+    }
+    map_onnx_to_myGraph[coef_name] = coef_name
+
+    t_name = value_name + suffix
+    myGraph[t_name] = {}
+    myGraph[t_name]["op_type"] = OPTYPE.Transpose
+    myGraph[t_name]["inputs"] = [map_onnx_to_myGraph[value_name], coef_name]
+    myGraph[t_name]["additional"] = {"data": owner_node}
+    map_onnx_to_myGraph[t_name] = t_name
+    return t_name
+
+def resolve_conv_weight_name_for_sadl(
+    n1name,
+    node,
+    model_onnx,
+    myGraph,
+    node_annotation,
+    map_onnx_to_myGraph,
+    verbose,
+):
+    # static weight: keep existing const path
+    if is_static_tensor_source(n1name, model_onnx):
+        additional_w = {}
+        additional_w["data"] = node
+
+        n2 = getNodesWithOutput(n1name, model_onnx)
+        (
+            additional_w["dims"],
+            additional_w["raw_data"],
+            additional_w["dtype"],
+        ) = extract_additional_data(
+            n1name,
+            node_annotation[n2.name].to_transpose,
+            model_onnx.graph,
+            verbose,
+        )
+
+        map_onnx_to_myGraph[n1name] = n1name
+        myGraph[n1name] = {}
+        myGraph[n1name]["inputs"] = []
+        myGraph[n1name]["additional"] = additional_w
+        myGraph[n1name]["op_type"] = OPTYPE.Const
+
+        return map_onnx_to_myGraph[n1name]
+
+    # dynamic weight path
+    kernel_dims = get_conv_weight_oikhkw_dims(n1name, model_onnx)
+
+    if (
+        kernel_dims is not None
+        and len(kernel_dims) == 4
+        and kernel_dims[2] == 1
+        and kernel_dims[3] == 1
+    ):
+        # 1x1: existing Reshape already changed [O, I, 1, 1] -> [1, 1, O, I]
+        # so do NOT add another transpose
+        return map_onnx_to_myGraph[n1name]
+
+    # non-1x1 dynamic kernel: reorder OIKhKw -> KhKwOI
+    return add_explicit_transpose(
+        n1name,
+        [2, 3, 0, 1],
+        "_KERNEL_LAYOUT_NOT_IN_GRAPH",
+        myGraph,
+        map_onnx_to_myGraph,
+        node,
+    )
 
 def parse_graph_node(
     node, model_onnx, myGraph, node_annotation, map_onnx_to_myGraph, verbose, force_transpose_constant_tensor_dim4
@@ -677,10 +842,77 @@ def parse_graph_node(
             n2name = node.input[2]
         else:
             n2name = None
-            
-    if (
-        node.op_type == "Conv"
-        or node.op_type == "Gemm"
+
+    if node.op_type == "Conv":
+        nb_inputs = len(node.input)
+        if (nb_inputs != 3) and (nb_inputs != 2):
+            raise Exception("parse_graph_node: Error on Conv node type")
+
+        weight_name_for_conv = resolve_conv_weight_name_for_sadl(
+            n1name,
+            node,
+            model_onnx,
+            myGraph,
+            node_annotation,
+            map_onnx_to_myGraph,
+            verbose,
+        )
+
+        # Conv node itself
+        inputs, additional = [], {}
+        inputs = [map_onnx_to_myGraph[n0name], weight_name_for_conv]
+
+        additional["data"] = node
+        a = getAttribute(node, "strides")
+        additional["strides"] = a.ints
+
+        a = getAttribute(node, "group")
+        additional["group"] = a.i
+
+        a = getAttribute(node, "pads")
+        if a:
+            additional["pads"] = a.ints
+        else:
+            additional["pads"] = [0, 0, 0, 0]
+
+        if nb_inputs == 2:
+            map_onnx_to_myGraph[node.output[0]] = node.output[0]
+        else:
+            map_onnx_to_myGraph[node.output[0]] = node.output[0] + "_NOT_IN_GRAPH"
+
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["inputs"] = inputs
+        myGraph[node.output[0]]["additional"] = additional
+        myGraph[node.output[0]]["op_type"] = OPTYPE.Conv2D
+
+        # optional bias
+        if nb_inputs == 3:
+            additional = {}
+            additional["data"] = node
+            (
+                additional["dims"],
+                additional["raw_data"],
+                additional["dtype"],
+            ) = extract_additional_data(node.input[2], False, model_onnx.graph, verbose)
+
+            map_onnx_to_myGraph[node.input[2]] = node.input[2]
+            myGraph[node.input[2]] = {}
+            myGraph[node.input[2]]["inputs"] = []
+            myGraph[node.input[2]]["additional"] = additional
+            myGraph[node.input[2]]["op_type"] = OPTYPE.Const
+
+            inputs, additional = [], {}
+            inputs = [node.output[0], map_onnx_to_myGraph[node.input[2]]]
+            additional["data"] = node
+
+            map_onnx_to_myGraph[node.output[0] + "_NOT_IN_GRAPH"] = None
+            myGraph[node.output[0] + "_NOT_IN_GRAPH"] = {}
+            myGraph[node.output[0] + "_NOT_IN_GRAPH"]["inputs"] = inputs
+            myGraph[node.output[0] + "_NOT_IN_GRAPH"]["additional"] = additional
+            myGraph[node.output[0] + "_NOT_IN_GRAPH"]["op_type"] = OPTYPE.BiasAdd            
+
+    elif (
+        node.op_type == "Gemm"
         or node.op_type == "ConvTranspose"
     ):
         nb_inputs = len(node.input)
@@ -1020,37 +1252,50 @@ def parse_graph_node(
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
 
     elif node.op_type == "Reshape":
+        is_kernel_reshape = is_used_as_conv_weight(node.output[0], model_onnx)
+    
         n2 = getNodesWithOutput(n1name, model_onnx)
         if n2 is not None and (not hasattr(n2, "op_type") or n2.op_type == "Constant"):
-            # Const
             myGraph[n1name] = {}
             myGraph[n1name]["op_type"] = OPTYPE.Const
             myGraph[n1name]["inputs"] = []
             additional = {}
-            n2 = getNodesWithOutput(n1name, model_onnx)
-            (
-                additional["dims"],
-                additional["raw_data"],
-                additional["dtype"],
-            ) = extract_additional_data(
-                n1name, node_annotation[n2.name].to_transpose, model_onnx.graph, verbose
-            )
+    
+            if is_kernel_reshape:
+                shape_vals = get_constant_ints(n1name, model_onnx)
+                if shape_vals is None:
+                    raise Exception("Kernel Reshape shape input must be constant")
+    
+                # Kernel 1x1 special-case: [O,I,1,1] -> [1,1,O,I]
+                if len(shape_vals) == 4 and shape_vals[2] == 1 and shape_vals[3] == 1:
+                    shape_vals = [1, 1, shape_vals[0], shape_vals[1]]
+    
+                additional["dims"] = [len(shape_vals)]
+                additional["raw_data"] = np.array(shape_vals, dtype=np.int32).tobytes()
+                additional["dtype"] = DTYPE_SADL.INT32
+            else:
+                (
+                    additional["dims"],
+                    additional["raw_data"],
+                    additional["dtype"],
+                ) = extract_additional_data(
+                    n1name, node_annotation[n2.name].to_transpose, model_onnx.graph, verbose
+                )
+    
             additional["data"] = node
             myGraph[n1name]["additional"] = additional
-
+    
         map_onnx_to_myGraph[n1name] = n1name
-        n2 = getNodesWithOutput(node.input[0], model_onnx)
-        # Reshape
+    
         inputs, additional = [], {}
         inputs = [map_onnx_to_myGraph[n0name], n1name]
         additional["data"] = node
+    
         myGraph[node.output[0]] = {}
         myGraph[node.output[0]]["inputs"] = inputs
         myGraph[node.output[0]]["additional"] = additional
-
-        # why this? if node.op_type == "Reshape":
         myGraph[node.output[0]]["op_type"] = OPTYPE.Reshape
-
+    
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
 
     elif node.op_type == "MatMul":
@@ -2168,7 +2413,7 @@ def parse_graph_node(
         raise Exception("[ERROR] node not supported:\n{})".format(node))
 
     if node_annotation[node.name].to_nhwc_after_out:
-        n0name = add_transpose_to_output(node, myGraph, map_onnx_to_myGraph)
+        n0name = add_transpose_to_output(node, myGraph, map_onnx_to_myGraph, model_onnx)
 
 
 def parse_onnx(model_onnx, node_annotation, input_default_value, verbose=False, force_transpose_constant_tensor_dim4=False):
@@ -2240,7 +2485,7 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, info_string, verbos
             raise ValueError("info_string is too long for int16 length field")
         f.write(struct.pack("h", len(info_bytes)))
         f.write(info_bytes)
-
+        
         if verbose:
             print(f"# Nb layers: {len(graph.keys())}")
         f.write(struct.pack("i", int(len(graph.keys()))))
@@ -2309,7 +2554,7 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, info_string, verbos
                         print(f"#\t\t {dim}")
                     f.write(struct.pack("i", int(dim)))
                 f.write(b"\x00") # not sparse
-                f.write(b"\x00") # not transpose                
+                f.write(b"\x00") # not transpose   
                 if verbose:
                     print(f"#\t dtype {node['additional']['dtype']}")
                 f.write(struct.pack("i", int(node["additional"]["dtype"])))
@@ -2732,104 +2977,149 @@ def annotate_node(
 
     elif node.op_type == "Reshape":
 
-        initializer = getInitializer(node.input[1], model_onnx)
-        # Case: In pytorch, Reshape is not in model_onnx.graph.initializer but in model_onnx.graph.node
-        if initializer is None:
-            attribute = getAttribute(
-                getNodesWithOutput(node.input[1], model_onnx), "value"
-            )
-            if attribute is not None:  # maybe a shape node
-                initializer = attribute.t
+        if is_used_as_conv_weight(node.output[0], model_onnx):
+            node_annotation[node.name].layout_onnx = None
+            node_annotation[node.name].transpose_before_in0 = None
+            node_annotation[node.name].transpose_before_in1 = None
+            node_annotation[node.name].to_nhwc_after_out = False
+        else:
+            dims = get_constant_ints(node.input[1], model_onnx)
 
-        if initializer is not None:  # constant case
-            dims = getDims(initializer)
-            # detect if this reshape is actually added by onnx to emulate a transpose
-            # we need to test more if reshpae is for transpose...
-            if (
-                len(dims) == 4
-            ):  # general case should be fine now REMOVED: and (dims[0] == 1 or dims[0] == -1):
-                if len(dims) > 1 and data_layout == "nhwc":
-                    if dims[1] == 1:  # or dims2 * dims3 == 1 # nhwc ->nchw
-                        node_annotation[node.name].to_remove = True  # will be removed
-                        node_annotation[
-                            node.name
-                        ].layout_onnx = "nchw"  # new layout at output
-                    else:
-                        if global_data_layout == "nchw":
-                            node_annotation[node.name].transpose_before_in0 = "nchw"
-                            node_annotation[node.name].to_nhwc_after_out = True
-                            node_annotation[node.name].layout_onnx = None
-                        else:
-                            if verbose > 1:
-                                print(
-                                    "[WARNING] reshape unknown for NODE:\n",
-                                    node,
-                                    "\n shape: dims=",
-                                    dims,
-                                )
-                            node_annotation[node.name].layout_onnx = None
-                elif data_layout == "nchw":
-                    node_annotation[node.name].to_nhwc_after_out = True
-                    node_annotation[node.name].transpose_before_in0 = "nchw"
+            if dims is not None:
+                in0_dims = try_extract_dim_by_name(node.input[0], model_onnx.graph)
+                in0_rank = len(in0_dims) if in0_dims is not None else None
+                pre_transpose_allowed = (in0_rank == 4 or in0_rank is None)
+
+                # Special case: 2D -> [N,C,1,1]
+                special_nc11_from_2d = (
+                    global_data_layout == "nchw"
+                    and len(dims) == 4
+                    and dims[2] == 1
+                    and dims[3] == 1
+                    and in0_rank == 2
+                )
+
+                if special_nc11_from_2d:
+                    # Rewrite the SHAPE constant/vector: [N,C,1,1] -> [N,1,1,C]
+                    shape_src = getNodesWithOutput(node.input[1], model_onnx)
+                    if (
+                        shape_src is not None
+                        and hasattr(shape_src, "name")
+                        and shape_src.name in node_annotation
+                    ):
+                        node_annotation[shape_src.name].to_transpose = True
+
+                    # No transpose before/after for this reshape
+                    node_annotation[node.name].transpose_before_in0 = None
+                    node_annotation[node.name].to_nhwc_after_out = False
                     node_annotation[node.name].layout_onnx = None
-                    if verbose > 1:
-                        print(" case nchw with cst shape")
-                elif data_layout is None:
-                    node_annotation[
-                        node.name
-                    ].layout_onnx = global_data_layout  # back to org
-                    if global_data_layout == "nchw":
-                        node_annotation[
-                            node.name
-                        ].to_nhwc_after_out = True  # a bit too agressive
+
+                else:
+                    if len(dims) == 4:
+                        if len(dims) > 1 and data_layout == "nhwc":
+                            if dims[1] == 1:  # nhwc -> nchw
+                                node_annotation[node.name].to_remove = True
+                                node_annotation[node.name].layout_onnx = "nchw"
+                            else:
+                                if global_data_layout == "nchw":
+                                    if pre_transpose_allowed:
+                                        node_annotation[node.name].transpose_before_in0 = "nchw"
+                                    node_annotation[node.name].to_nhwc_after_out = True
+                                    node_annotation[node.name].layout_onnx = None
+                                else:
+                                    if verbose > 1:
+                                        print(
+                                            "[WARNING] reshape unknown for NODE:\n",
+                                            node,
+                                            "\n shape: dims=",
+                                            dims,
+                                        )
+                                    node_annotation[node.name].layout_onnx = None
+
+                        elif data_layout == "nchw":
+                            node_annotation[node.name].to_nhwc_after_out = True
+                            if pre_transpose_allowed:
+                                node_annotation[node.name].transpose_before_in0 = "nchw"
+                            node_annotation[node.name].layout_onnx = None
+                            if verbose > 1:
+                                print(" case nchw with cst shape")
+
+                        elif data_layout is None:
+                            node_annotation[node.name].layout_onnx = global_data_layout
+                            if global_data_layout == "nchw":
+                                node_annotation[node.name].to_nhwc_after_out = True  # existing behavior
+                    else:
+                        node_annotation[node.name].layout_onnx = None
+
+                    n2 = getNodesWithOutputNotConst(node.input[0], model_onnx)
+                    if (
+                        n2 is not None
+                        and hasattr(n2, "name")
+                        and n2.name in node_annotation
+                        and node_annotation[n2.name].layout_onnx == "nchw"
+                        and pre_transpose_allowed
+                    ):
+                        node_annotation[node.name].transpose_before_in0 = "nchw"
+                        if node_annotation[node.name].to_nhwc_after_out is False:
+                            node_annotation[node.name].layout_onnx = "nchw"
+            # shape is not a constant
             else:
-                node_annotation[node.name].layout_onnx = None
-            n2 = getNodesWithOutputNotConst(node.input[0], model_onnx)
-            if (
-                node_annotation[n2.name].layout_onnx == "nchw"
-            ):  # need to go back to original layout before reshape
-                node_annotation[node.name].transpose_before_in0 = "nchw"
-                if node_annotation[node.name].to_nhwc_after_out is False:
-                    node_annotation[node.name].layout_onnx = "nchw"
-        else:  # case where shape is not a constant
-            if global_data_layout == "nchw":
-                node_annotation[
-                    node.name
-                ].transpose_before_in0 = "nhwc"  # applying a channel last transfo will keep the reshape correct.
-                if verbose > 1:
-                    print(" case nchw with shape from a tensor")
+                if global_data_layout == "nchw":
+                    in0_dims = try_extract_dim_by_name(node.input[0], model_onnx.graph)
+                    in0_rank = len(in0_dims) if in0_dims is not None else None
+                    if in0_rank == 4 or in0_rank is None:
+                        node_annotation[node.name].transpose_before_in0 = "nhwc"
+                    if verbose > 1:
+                        print(" case nchw with shape from a tensor")
 
     elif node.op_type == "Flatten":
-        if (
-            node_annotation[node.name].layout_onnx == "nchw"
-        ):  # need to go back to original layout before reshape
-            node_annotation[node.name].transpose_before_in0 = "nchw"
+        if node_annotation[node.name].layout_onnx == "nchw":
+            a = getAttribute(node, "axis")
+            dims = try_extract_dim_by_name(node.input[0], model_onnx.graph)
+
+            need_transpose = True
+
+            if a is not None and a.i == 1 and dims is not None and len(dims) == 4:
+                C = dims[1]
+                H = dims[2]
+                W = dims[3]
+
+                if C == 1 or (H == 1 and W == 1):
+                    need_transpose = False
+
+            if need_transpose:
+                node_annotation[node.name].transpose_before_in0 = "nchw"
 
     elif node.op_type == "Concat":
-        if data_layout == "nchw":  # nhwc -> nhwc
+        if data_layout == "nchw":
             a = getAttribute(node, "axis")
-            if a.i == 1:
-                a.i = 3
-            elif a.i == 2:
-                a.i = 1
-            elif a.i == 3:
-                a.i = 2
-            elif a.i == -3:
-                a.i = -1
-            elif a.i == -2:
-                a.i = -3
-            elif a.i == -1:
-                a.i = -2
-        if detect_silly_reshape(node, model_onnx, node_annotation, verbose):
-            print("[WARNING] strange ONNX pattern detected and simplified")
+    
+            dims = try_extract_dim_by_name(node.input[0], model_onnx.graph)
+            if dims is None:
+                dims = try_extract_dim_by_name(node.output[0], model_onnx.graph)
+    
+            if dims is None or len(dims) == 4:
+                axis_map = {
+                    1: 3,
+                    2: 1,
+                    3: 2,
+                    -3: -1,
+                    -2: -3,
+                    -1: -2,
+                }
+                a.i = axis_map.get(a.i, a.i)
 
+    if detect_silly_reshape(node, model_onnx, node_annotation, verbose):
+        print("[WARNING] strange ONNX pattern detected and simplified")
     elif node.op_type == "Unsqueeze":
         node_annotation[node.name].to_remove = True
 
     elif node.op_type == "Conv":
-        n2 = getInitializer(node.input[1], model_onnx)
-        node_annotation[n2.name].to_transpose = True
-        node_annotation[n2.name].layout_onnx = "nhwc"
+        if is_static_tensor_source(node.input[1], model_onnx):
+            n2 = getNodesWithOutput(node.input[1], model_onnx)
+            if n2 is not None and hasattr(n2, "name") and n2.name in node_annotation:
+                node_annotation[n2.name].to_transpose = True
+                node_annotation[n2.name].layout_onnx = "nhwc"
 
     elif node.op_type == "ConvTranspose":
         n2 = getInitializer(node.input[1], model_onnx)
@@ -2944,6 +3234,13 @@ def dumpModel(
         Is additional information printed?
     """
     model_onnx_copy = copy.deepcopy(model_onnx)
+
+    try:
+        model_onnx_copy = onnx.shape_inference.infer_shapes(model_onnx_copy)
+    except Exception as e:
+        if verbose:
+            print("[WARN] ONNX shape_inference failed, continuing without it:", e)
+
     if data_layout is None:
         data_layout = detectDataType(model_onnx_copy)
 
@@ -3049,7 +3346,6 @@ if __name__ == "__main__":
         type=str,
         help="info string to put in the model"
     )
-    
     args = parser.parse_args()
     if args.input_onnx is None:
         quit("[ERROR] You should specify an onnx file")
@@ -3060,7 +3356,6 @@ if __name__ == "__main__":
     if args.info_string is None:
         print("[WARNING] no info string provided, please use --info_string to pass an info on the model")
         args.info_string = ""
-
     if args.verbose is None:
         args.verbose = 0
 
