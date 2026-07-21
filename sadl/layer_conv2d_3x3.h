@@ -285,7 +285,7 @@ template<typename T> template<int s_h, int s_w> void Conv2D<T>::conv2d_3x3_s_g2_
     {
       int  im_i;
       int  im_j;
-      auto loop_with_cond = [&, filter_nb, shift, group, in_d_offset](int i0, int i1, int j0, int j1)
+      auto loop_with_cond = [&, filter_nb, shift, in_d_offset](int i0, int i1, int j0, int j1)
       {
         typename ComputationType<T>::type x = 0;
         for (int filter_i = i0; filter_i <= i1; ++filter_i)
