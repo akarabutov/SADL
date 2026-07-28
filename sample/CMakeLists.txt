@@ -9,6 +9,30 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(..)
 file(GLOB HEADER_FILES helper.h ../sadl/*.h )
 
+cmake_policy(SET CMP0104 NEW)
+include(CheckLanguage)
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+  enable_language(CUDA)
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  find_package(CUDAToolkit REQUIRED)
+  add_executable(sample_cuda sample_cuda.cu)
+  target_include_directories(sample_cuda PRIVATE ..)
+  target_link_libraries(sample_cuda PRIVATE CUDA::cudart)
+  set_target_properties(sample_cuda PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES          native)
+  set(CMAKE_CUDA_ARCHITECTURES 75 86 89 90)
+  add_executable(sample_cuda_profiling sample_cuda.cu)
+  target_include_directories(sample_cuda_profiling PRIVATE ..)
+  target_link_libraries(sample_cuda_profiling PRIVATE CUDA::cudart)
+  set_target_properties(sample_cuda_profiling PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES          native)
+  set_target_properties(sample_cuda_profiling  PROPERTIES COMPILE_FLAGS "-DSADL_CUDA_PROFILE=1 " )
+endif()
+
 add_executable(sample_generic   sample.cpp ${HEADER_FILES})
 if( NOT (CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64") )
   add_executable(sample_simd256   sample.cpp ${HEADER_FILES})

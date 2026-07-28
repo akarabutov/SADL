@@ -1,0 +1,143 @@
+/* The copyright in this software is being made available under the BSD
+ * License, included below. This software may be subject to other third party
+ * and contributor rights, including patent rights, and no such rights are
+ * granted under this license.
+ *
+ * Copyright (c) 2010-2024, ITU/ISO/IEC
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  * Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *  * Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *  * Neither the name of the ITU/ISO/IEC nor the names of its contributors may
+ *    be used to endorse or promote products derived from this software without
+ *    specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGE.
+ */
+#pragma once
+
+#include "layer_placeholder.h"
+#include "layer_reshape.h"
+#include "layer_const.h"
+#include "layer_identity.h"
+#include "layer_conv2d.h"
+#include "layer_conv2dtranspose.h"
+#include "layer_matmul.h"
+#include "layer_biasadd.h"
+#include "layer_add.h"
+#include "layer_relu.h"
+#include "layer_copy.h"
+#include "layer_maxpool.h"
+#include "layer_mul.h"
+#include "layer_concat.h"
+#include "layer_maximum.h"
+#include "layer_leakyrelu.h"
+#include "layer_transpose.h"
+#include "layer_flatten.h"
+#include "layer_shape.h"
+#include "layer_expand.h"
+#include "layer_slice.h"
+#include "layer_prelu.h"
+#include "layer_scatternd.h"
+#include "layer_gridsample.h"
+#include "layer_resize.h"
+#include "layer_compare.h"
+#include "layer_where.h"
+#include "layer_minimum.h"
+#include "layer_averagepool.h"
+#include "layer_reduce_mean.h"
+#include "layer_tile.h"
+#include "layer_pad.h"
+#include "layer_floor.h"
+#include "layer_sub.h"
+#include "layer_abs.h"
+#include "layer_depth2space.h"
+#include "layer_bitshift.h"
+#include "layer_gather.h"
+#include "layer_gather_elements.h"
+#include "layer_global_averagepool.h"
+#include "layer_clip.h"
+#include "layer_conv2d_bias_prelu.h"
+#include "layer_conv2d_bias.h"
+
+#include <sstream>
+#include <string>
+
+namespace sadl_cuda
+{
+namespace layers
+{
+
+inline std::string opName(OperationType::Type op)
+{
+#define DIRTYCASEPRINT(X) case OperationType::X: oss << #X; break
+  std::ostringstream oss;
+  switch (op)
+  {
+    DIRTYCASEPRINT(Conv2DBiasPreLU);
+    DIRTYCASEPRINT(Conv2DBias);
+    DIRTYCASEPRINT(Copy);
+    DIRTYCASEPRINT(Const);
+    DIRTYCASEPRINT(Placeholder);
+    DIRTYCASEPRINT(Identity);
+    DIRTYCASEPRINT(BiasAdd);
+    DIRTYCASEPRINT(MaxPool);
+    DIRTYCASEPRINT(MatMul);
+    DIRTYCASEPRINT(Reshape);
+    DIRTYCASEPRINT(Relu);
+    DIRTYCASEPRINT(Conv2D);
+    DIRTYCASEPRINT(Conv2DTranspose);
+    DIRTYCASEPRINT(Add);
+    DIRTYCASEPRINT(Mul);
+    DIRTYCASEPRINT(Concat);
+    DIRTYCASEPRINT(Maximum);
+    DIRTYCASEPRINT(LeakyRelu);
+    DIRTYCASEPRINT(Transpose);
+    DIRTYCASEPRINT(Flatten);
+    DIRTYCASEPRINT(Shape);
+    DIRTYCASEPRINT(Expand);
+    DIRTYCASEPRINT(Slice);
+    DIRTYCASEPRINT(PReLU);
+    DIRTYCASEPRINT(ScatterND);
+    DIRTYCASEPRINT(GridSample);
+    DIRTYCASEPRINT(Resize);
+    DIRTYCASEPRINT(Compare);
+    DIRTYCASEPRINT(Where);
+    DIRTYCASEPRINT(Minimum);
+    DIRTYCASEPRINT(AveragePool);
+    DIRTYCASEPRINT(ReduceMean);
+    DIRTYCASEPRINT(Tile);
+    DIRTYCASEPRINT(Pad);
+    DIRTYCASEPRINT(Floor);
+    DIRTYCASEPRINT(Sub);
+    DIRTYCASEPRINT(Abs);
+    DIRTYCASEPRINT(Depth2Space);
+    DIRTYCASEPRINT(BitShift);
+    DIRTYCASEPRINT(Gather);
+    DIRTYCASEPRINT(GatherElements);
+    DIRTYCASEPRINT(GlobalAveragePool);
+    DIRTYCASEPRINT(Clip);
+  default: oss << "??"; break;
+  }
+  return oss.str();
+#undef DIRTYCASEPRINT
+}
+
+}  // namespace layers
+}  
