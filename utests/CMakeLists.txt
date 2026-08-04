@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.18)
 
 project(test LANGUAGES CXX)
 
@@ -43,3 +43,36 @@ if( MSVC )
   set_target_properties(test_sadl_int16_avx2_sparse PROPERTIES COMPILE_FLAGS "/arch:AVX2 /DSPARSE_SUPPORT=1")
   string( APPEND CMAKE_CXX_FLAGS " /WX" ) #treat warnings as errors
 endif()
+
+add_executable(test_cpu_int16 test_cpu_int16.cpp)
+target_include_directories(test_cpu_int16 PRIVATE ..)
+if( UNIX OR MINGW )
+  set_target_properties(test_cpu_int16 PROPERTIES COMPILE_FLAGS "-O3 -DNDEBUG=1")
+endif()
+
+cmake_policy(SET CMP0104 NEW)
+include(CheckLanguage)
+check_language(CUDA)
+if(CMAKE_CUDA_COMPILER)
+  enable_language(CUDA)
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+  find_package(CUDAToolkit REQUIRED)
+
+  add_executable(test_cuda_int16 test_cuda_int16.cu)
+  target_include_directories(test_cuda_int16 PRIVATE ..)
+  target_link_libraries(test_cuda_int16 PRIVATE CUDA::cudart)
+  set_target_properties(test_cuda_int16 PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    CUDA_ARCHITECTURES          native
+  )
+  target_compile_options(test_cuda_int16 PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -O3>
+  )
+
+  message(STATUS "CUDA found: test_cuda_int16 will be built")
+else()
+  message(WARNING "CUDA compiler not found: test_cuda_int16 will NOT be built")
+endif()
+

@@ -8,6 +8,7 @@ For build instructions, conversion tools, and usage examples see the top-level `
 - [Overview](#overview)
 - [Including the library](#including-the-library)
 - [Build options — `options.h`](#build-options--optionsh)
+- [Tensor memory management (`SADL_USE_MEMORY_POOL`)](#tensor-memory-management-sadl_use_memory_pool)
 - [`Model<T>` — main inference class](#modelt--main-inference-class)
 - [`Tensor<T>` — data container](#tensort--data-container)
 - [`Dimensions` — shape descriptor](#dimensions--shape-descriptor)
@@ -58,6 +59,7 @@ All options are controlled by preprocessor macros or compiler flags before the l
 |-------|---------|-------------|
 | `SATURATE_RESULT` | `1` | Clamp integer outputs to the representable range instead of wrapping on overflow. Set to `0` to disable. |
 | `SPARSE_SUPPORT` | undefined | Enable sparse MatMul acceleration. When defined, two thresholds become available (see below). |
+| `SADL_USE_MEMORY_POOL` | `0` | Enable reference-counted tensor lifetimes so intermediate activation buffers are released as soon as they are consumed, lowering peak memory. Default `0` keeps every tensor persistent for the model's lifetime (legacy behaviour). See [Tensor memory management](#tensor-memory-management-sadl_use_memory_pool). |
 | `NDEBUG` | undefined | Disable internal sanity assertions (improves performance). |
 
 When `SPARSE_SUPPORT` is defined the following global constants are declared:
@@ -111,6 +113,60 @@ namespace sadl {
   };
 }
 ```
+
+---
+
+## Tensor memory management (`SADL_USE_MEMORY_POOL`)
+
+SADL supports two strategies for the lifetime of tensor buffers, selected at
+compile time by `SADL_USE_MEMORY_POOL`. **Both produce identical inference
+results** — this is purely a memory-footprint / allocation trade-off.
+
+### Default: persistent tensors (`SADL_USE_MEMORY_POOL = 0`)
+
+Every tensor is *persistent*: its buffer is allocated during `init()` and kept
+alive for the whole lifetime of the model. Intermediate activations are never
+freed between layers, so the resident footprint is the sum of **all** layer
+buffers. This is the legacy behaviour — simplest, with no per-`apply()`
+allocation activity.
+
+### Pooled: reference-counted lifetimes (`SADL_USE_MEMORY_POOL = 1`)
+
+Tensor buffers are managed by reference counting through a global
+`MemoryPool`, so an intermediate activation is freed (returned to the pool) as
+soon as every consumer has read it. Peak memory then tracks only the buffers
+*simultaneously* live at any point in the graph, which is typically far smaller
+than the total for deep models.
+
+The counting is driven automatically during inference: each layer's execution
+acquires its output and releases its inputs (via an RAII `LayerExecutionScope`
+in `layer.h`), so no manual bookkeeping is needed for normal use. Model outputs
+are pinned persistent (`acquire(0)`) and constant (`Const`) weight tensors are
+never released, so both survive across repeated `apply()` calls.
+
+### Tensor lifetime API
+
+These `Tensor<T>` methods underpin the pool and are also available for advanced
+manual control:
+
+```cpp
+void acquire(int n = 1);          // add n references and ensure the buffer is allocated;
+                                  // acquire(0) pins the tensor as persistent
+void release(bool force = false); // drop one reference; frees the buffer when the
+                                  // count reaches 0. force=true frees immediately
+                                  // (no-op on a persistent tensor)
+bool isPersistent() const;        // true if the tensor is pinned (never auto-freed)
+```
+
+With `SADL_USE_MEMORY_POOL = 0` these are effectively no-ops: every tensor is
+persistent and `acquire`/`release` never free anything.
+
+### Testing
+
+The `*_mempool` unit-test targets (e.g. `test_avx2_mempool`,
+`test_sadl_int16_avx2_mempool` in `utests/CMakeLists.txt`) build the suite with
+`-DSADL_USE_MEMORY_POOL=1`, ensuring the pooled path stays bit-exact with the
+default path.
 
 ---
 
@@ -336,6 +392,17 @@ const_iterator end() const;
 ```cpp
 void fill(T value);   // fill all elements with a constant
 ```
+
+### Lifetime management
+
+```cpp
+void acquire(int n = 1);
+void release(bool force = false);
+bool isPersistent() const;
+```
+
+Reference-counting hooks used by the optional memory pool. See
+[Tensor memory management](#tensor-memory-management-sadl_use_memory_pool).
 
 ### Sparse support *(requires `SPARSE_SUPPORT`)*
 
