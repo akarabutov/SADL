@@ -73,6 +73,7 @@
 #include "layer_gather_elements.h"
 #include "layer_global_averagepool.h"
 #include "layer_clip.h"
+#include "layer_fused_matmul_adapt_quant.h"
 
 namespace sadl
 {
@@ -128,6 +129,7 @@ inline std::string opName(const OperationType::Type op)
     DIRTYCASEPRINT(GlobalAveragePool);
     DIRTYCASEPRINT(BitShift);
     DIRTYCASEPRINT(Clip);
+    DIRTYCASEPRINT(FusedMatMulAdaptQuant);
   default:
     oss << "??";
     break;

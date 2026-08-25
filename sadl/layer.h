@@ -87,8 +87,9 @@ struct OperationType
     GatherElements     = 37,
     GlobalAveragePool  = 38,
     BitShift           = 39,
-    Clip               = 40,
-    OperationTypeCount = 41,
+    Clip                       = 40,
+    OperationTypeCount         = 41,
+    FusedMatMulAdaptQuant      = 32768,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 
   };

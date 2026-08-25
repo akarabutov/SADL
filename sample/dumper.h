@@ -207,6 +207,43 @@ template<typename T> bool sadl::layers::Gather<T>::dump(std::ostream &file)
   return true;
 }
 
+template<typename T> bool sadl::layers::FusedMatMulAdaptQuant<T>::dump(std::ostream &file)
+{
+  assert((std::is_same<T, int16_t>::value) && "FusedMatMulAdaptQuant dump only supports int16");
+
+  file.write((const char *) &this->m_q, sizeof(this->m_q));
+
+  uint8_t leakyFused = this->m_leakyReluFused ? 1 : 0;
+  file.write((const char *) &leakyFused, sizeof(uint8_t));
+
+  int32_t inSize = (int32_t) this->m_staticInputBitShifts.size();
+  file.write((const char *) &inSize, sizeof(int32_t));
+  for (int i = 0; i < inSize; ++i)
+  {
+    int16_t x = (int16_t) this->m_staticInputBitShifts[i];
+    file.write((const char *) &x, sizeof(int16_t));
+  }
+
+  int32_t outSize = (int32_t) this->m_staticOutputBitShifts.size();
+  file.write((const char *) &outSize, sizeof(int32_t));
+  for (int i = 0; i < outSize; ++i)
+  {
+    int16_t x = (int16_t) this->m_staticOutputBitShifts[i];
+    file.write((const char *) &x, sizeof(int16_t));
+  }
+
+  int32_t mrrsSize = (int32_t) this->m_MRRS_per_out.size();
+  file.write((const char *) &mrrsSize, sizeof(int32_t));
+  for (int i = 0; i < mrrsSize; ++i)
+  {
+    int16_t x = (int16_t) this->m_MRRS_per_out[i];
+    file.write((const char *) &x, sizeof(int16_t));
+  }
+
+
+  return true;
+}
+
 template<typename T> bool sadl::layers::Layer<T>::dump(std::ostream &file)
 {
   // std::cout<<"todo? "<<opName(op_)<<std::endl;
