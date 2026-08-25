@@ -50,6 +50,18 @@ template<typename T> bool copy(const sadl::layers::Layer<float> &layer, sadl::la
     break;
   case sadl::layers::OperationType::MatMul:
     break;
+  case sadl::layers::OperationType::FusedMatMulAdaptQuant:
+  {
+    const auto &src = dynamic_cast<const sadl::layers::FusedMatMulAdaptQuant<float> &>(layer);
+
+    auto &dst = dynamic_cast<sadl::layers::FusedMatMulAdaptQuant<T> &>(layerQ);
+
+    dst.setStaticInputBitShifts(src.getStaticInputBitShifts());
+    dst.setStaticOutputBitShifts(src.getStaticOutputBitShifts());
+    dst.setMRRSPerOut(src.getMRRSPerOut());
+    dst.setLeakyReluFused(src.leakyReluFused());
+    break;
+  }
   case sadl::layers::OperationType::MaxPool:
     dynamic_cast<sadl::layers::MaxPool<T> &>(layerQ).m_kernel  = dynamic_cast<const sadl::layers::MaxPool<float> &>(layer).m_kernel;
     dynamic_cast<sadl::layers::MaxPool<T> &>(layerQ).m_strides = dynamic_cast<const sadl::layers::MaxPool<float> &>(layer).m_strides;
