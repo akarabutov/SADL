@@ -153,6 +153,11 @@ template<typename T> bool MatMul<T>::apply(std::vector<Tensor<T> *> &in)
     std::cerr << "Logical error MatMul::apply(std::vector<Tensor<T> *> &in)" << A.dims() << ' ' << B.dims() << std::endl;
     return false;
   }
+#undef MULT8_DIM2
+#undef MULT16_DIM2
+#undef SPARSE_MATMULT
+#undef SPARSE_MATMULT_PACK8
+#undef SPARSE_MATMULT_PACK16
 }
 
 #if __AVX2__

@@ -926,6 +926,11 @@ template<> inline bool FusedMatMulAdaptQuant<int16_t>::apply(std::vector<Tensor<
     std::cerr << "Logical error FusedMatMulAdaptQuant::apply(std::vector<Tensor<T> *> &in)" << A.dims() << ' ' << B.dims() << std::endl;
     return false;
   }
+#undef MULT8_DIM2
+#undef MULT16_DIM2 
+#undef SPARSE_MATMULT
+#undef SPARSE_MATMULT_PACK8
+#undef SPARSE_MATMULT_PACK16
 }
 
 // ---------------------------------------------------------------------------
