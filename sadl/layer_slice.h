@@ -185,6 +185,17 @@ template<typename T> bool Slice<T>::init(const std::vector<Tensor<T> *> &in)
   m_end_c = m_init[5];
   // ONNX is sending 2^31 - 1 as value if end index is last channel
   if (dim.size() == 4) {
+    // PyTorch's ONNX export (sadl/converter/main.py's Slice handling) passes
+    // a negative `start` straight through from the ONNX Slice node without
+    // resolving it against the axis size (only a negative/sentinel `end` is
+    // resolved, both here and on the Python side) -- e.g. a `y[:, -96:]`
+    // slice on a 256-channel tensor is written out as start_c=-96, not 160.
+    // Resolve negative starts the same way negative/sentinel ends already
+    // are, instead of letting them flow into addr()/operator() as an
+    // out-of-range index (caught there by an assert, not here).
+    if (m_start_h < 0) { m_start_h = in[0]->dims()[1] + m_start_h; }
+    if (m_start_w < 0) { m_start_w = in[0]->dims()[2] + m_start_w; }
+    if (m_start_c < 0) { m_start_c = in[0]->dims()[3] + m_start_c; }
     if (m_end_h == pow2_31)
     {
       m_end_h = in[0]->dims()[1];
@@ -213,6 +224,8 @@ template<typename T> bool Slice<T>::init(const std::vector<Tensor<T> *> &in)
     )
       return false;
 
+    // Same negative-start fixup as the 4D case above, for the channel axis.
+    if (m_start_c < 0) { m_start_c = in[0]->dims()[1] + m_start_c; }
     if (m_end_c == pow2_31)
     {
       m_end_c = in[0]->dims()[1];

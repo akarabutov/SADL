@@ -612,10 +612,18 @@ template<typename T> bool Conv2D<T>::init(const std::vector<Tensor<T> *> &in)
 //  if (out_H != dim[1] || out_W != dim[2]) {  // warning, fail with tf2 3x3s2 pad=same i=(5,4)
 //    return false;
 //  }
-  if ((m_pads[0]!=m_pads[2])||(m_pads[1]!=m_pads[3])) {
-       std::cerr << "[ERROR] assymetric padding note tested" << std::endl;
-       return false;
-  }
+  // This project's local change: the generic rejection of asymmetric padding
+  // used to sit here ("assymetric padding note tested" -- "note" is a typo
+  // for "not", i.e. untested, not unsupported). out_H/out_W above already
+  // sum m_pads[0]+m_pads[2] and m_pads[1]+m_pads[3] independently of
+  // symmetry, and the conv2d_ixj compute path (layer_conv2d_ixj.h) only
+  // ever reads m_pads[0]/m_pads[1] (top/left) as the sliding-window start
+  // offset -- the bottom/right amounts only affect the output size, which
+  // is already computed correctly above. Verified against a real
+  // asymmetric-pad layer (a jpeg-ai synthesis transform's sub-pixel conv
+  // before DepthToSpace, pads=[0,0,1,1] for a 2x2 kernel) matching ONNX
+  // Runtime's output -- see tests/sadl_jpegai_test.cpp in the parent
+  // project and its project memory entry for the verification.
   if ((k_h>5&&m_pads[0]==0)||(k_w>5&&m_pads[1]==0)) {
        std::cerr << "[ERROR] pad 0 with large kernel not tested" << std::endl;
        return false;
