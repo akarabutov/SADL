@@ -86,10 +86,10 @@ public:
   using iterator        = value_type *;
   using const_iterator  = const value_type *;
 
-  TensorData()
-  {
-    static_assert(std::is_pod<value_type>::value, "TensorData requires POD value_type");
-  }
+  static_assert(std::is_trivially_copyable_v<value_type> && std::is_trivially_default_constructible_v<value_type>,
+                "TensorData requires value_type to be trivially copyable and trivially default constructible.");
+
+  TensorData() {}
   ~TensorData() { deallocate_only(); }
 
   TensorData(const TensorData &other): m_id(next_id()) { copy_from(other); }
