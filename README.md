@@ -151,7 +151,10 @@ clang-format -i sadl/layer_myop.h
 **Adding a new layer**
 1. Create `sadl/layer_myop.h` following the pattern of an existing layer.
 2. Register the new `OperationType` value in `sadl/layers.h`.
-3. Handle the new op in the converter (`converter/main.py`).
+3. Handle the new op in the converter: add a class in `converter/onnx2sadl/ops/`
+   (one `OpConverter` subclass per ONNX op), list it in `ops/op_catalog.py`, and,
+   if the SADL layer has parameters, a serializer in `converter/onnx2sadl/writer/`
+   registered in `writer/layer_serializer_registry.py`.
 4. Add a unit test (see below).
 
 **Unit test** — Every new layer must have a matching test in `utests/`:
@@ -165,14 +168,14 @@ clang-format -i sadl/layer_myop.h
 **Formatting / linting** — The converter uses `flake8` (config in `.flake8`):
 
 ```shell
-flake8 converter/main.py
+flake8 converter/
 ```
 
 Key rules: max line length 88, complexity ≤ 12, `E501` ignored.
 Format with `black` before committing (line length matches flake8 config).
 
 ```shell
-black converter/main.py
+black converter/
 ```
 
 ---
