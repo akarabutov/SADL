@@ -233,6 +233,18 @@ template<typename T> std::unique_ptr<layers::Layer<T>> createLayer(int32_t id, l
   case layers::OperationType::Clip:
     return std::unique_ptr<layers::Layer<T>>(new layers::Clip<T>{ id, op });
     break;
+  case layers::OperationType::Sigmoid:
+    return std::unique_ptr<layers::Layer<T>>(new layers::Sigmoid<T>{ id, op });
+    break;
+  case layers::OperationType::Elu:
+    return std::unique_ptr<layers::Layer<T>>(new layers::Elu<T>{ id, op });
+    break;
+  case layers::OperationType::LayerNormChannels:
+    return std::unique_ptr<layers::Layer<T>>(new layers::LayerNormChannels<T>{ id, op });
+    break;
+  case layers::OperationType::ChannelAttention:
+    return std::unique_ptr<layers::Layer<T>>(new layers::ChannelAttention<T>{ id, op });
+    break;
   case layers::OperationType::FusedMatMulAdaptQuant:
     return std::unique_ptr<layers::Layer<T>>(new layers::FusedMatMulAdaptQuant<T>{ id, op });
     break;

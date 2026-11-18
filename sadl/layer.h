@@ -88,7 +88,11 @@ struct OperationType
     GlobalAveragePool  = 38,
     BitShift           = 39,
     Clip                       = 40,
-    OperationTypeCount         = 41,
+    Sigmoid                    = 41,
+    Elu                        = 42,
+    LayerNormChannels          = 43,   // fused: LayerNorm over the channels of each pixel
+    ChannelAttention           = 44,   // fused: Restormer-style transposed multi-head attention
+    OperationTypeCount         = 45,
     FusedMatMulAdaptQuant      = 32768,
     OperationExperimentalStart = 65535,
     OperationExperimentalEnd = 65536 // 

@@ -146,6 +146,13 @@ class OPTYPE(IntEnum):
     GlobalAveragePool = (38,)
     BitShift = (39,)
     Clip = (40,)
+    Sigmoid = (41,)
+    Elu = (42,)
+    # Fused ops (no ONNX standard op): see sadl/layer_layernorm_channels.h and
+    # sadl/layer_channel_attention.h; jpeg-ai-cpp's tools/onnx_fixups/fuse_hop.py
+    # emits them.
+    LayerNormChannels = (43,)
+    ChannelAttention = (44,)
     # "BatchMatMulV2" did not exist in Tensorflow 1.9. It exists in
     # Tensorflow 1.15.
     BatchMatMulV2 = 6
@@ -1490,7 +1497,7 @@ def parse_graph_node(
 
     elif node.op_type == "Slice":
         # Slice
-        if len(node.input) == 5:  # PyTorch
+        if len(node.input) >= 4:  # PyTorch (steps, the 5th input, is optional)
             initializer = getInitializer(node.input[3], model_onnx)
             # Case: In pytorch, Slice is not in model_onnx.graph.initializer but in model_onnx.graph.node
             if initializer is None:
@@ -1500,14 +1507,16 @@ def parse_graph_node(
                 initializer = attribute.t
             axes = getDims(initializer)
 
-            initializer = getInitializer(node.input[4], model_onnx)
-            # Case: In pytorch, Slice is not in model_onnx.graph.initializer but in model_onnx.graph.node
-            if initializer is None:
-                attribute = getAttribute(
-                    getNodesWithOutput(node.input[4], model_onnx), "value"
-                )
-                initializer = attribute.t
-            steps = getDims(initializer)
+            steps = [1]
+            if len(node.input) == 5 and node.input[4]:
+                initializer = getInitializer(node.input[4], model_onnx)
+                # Case: In pytorch, Slice is not in model_onnx.graph.initializer but in model_onnx.graph.node
+                if initializer is None:
+                    attribute = getAttribute(
+                        getNodesWithOutput(node.input[4], model_onnx), "value"
+                    )
+                    initializer = attribute.t
+                steps = getDims(initializer)
 
             if len(axes) != 1:
                 quit(
@@ -2269,6 +2278,27 @@ def parse_graph_node(
         myGraph[node.output[0]]["additional"]["data"] = node
         map_onnx_to_myGraph[node.output[0]] = node.output[0]
 
+    elif node.op_type in ("Sigmoid", "Elu", "LayerNormChannels", "ChannelAttention"):
+        # Single-input ops on the channels (last NHWC dimension); the fused ops'
+        # parameters are constant initializers, written into the layer itself.
+        additional = {"data": node}
+        attrs = {a.name: onnx.helper.get_attribute_value(a) for a in node.attribute}
+        params = [onnx.numpy_helper.to_array(getInitializer(n, model_onnx)).astype(np.float32).ravel()
+                  for n in node.input[1:]]
+        if node.op_type == "Elu":
+            additional["alpha"] = float(attrs.get("alpha", 1.0))
+        elif node.op_type == "LayerNormChannels":
+            additional["eps"] = float(attrs["epsilon"])
+            additional["weight"], additional["bias"] = params
+        elif node.op_type == "ChannelAttention":
+            additional["eps"] = float(attrs["epsilon"])
+            additional["temperature"] = params[0]
+        myGraph[node.output[0]] = {}
+        myGraph[node.output[0]]["op_type"] = OPTYPE[node.op_type]
+        myGraph[node.output[0]]["inputs"] = [map_onnx_to_myGraph[n0name]]
+        myGraph[node.output[0]]["additional"] = additional
+        map_onnx_to_myGraph[node.output[0]] = node.output[0]
+
     elif node.op_type == "BitShift":
         # Bit shift operation
         if is_constant(n0name, model_onnx.graph.initializer):
@@ -2788,6 +2818,28 @@ def dump_onnx(graph, my_inputs, my_outputs, output_filename, info_string, verbos
                 if verbose:
                     print("#\t block size", node["additional"]["blocksize"])
                 f.write(struct.pack("i", int(node["additional"]["blocksize"])))
+
+            elif node["op_type"] == OPTYPE.Elu:
+                if verbose:
+                    print("#\t alpha", node["additional"]["alpha"])
+                f.write(struct.pack("f", node["additional"]["alpha"]))
+
+            elif node["op_type"] == OPTYPE.LayerNormChannels:
+                w, b = node["additional"]["weight"], node["additional"]["bias"]
+                if verbose:
+                    print("#\t channels", len(w), "eps", node["additional"]["eps"])
+                f.write(struct.pack("i", len(w)))
+                f.write(struct.pack("f", node["additional"]["eps"]))
+                f.write(w.astype("<f4").tobytes())
+                f.write(b.astype("<f4").tobytes())
+
+            elif node["op_type"] == OPTYPE.ChannelAttention:
+                t = node["additional"]["temperature"]
+                if verbose:
+                    print("#\t heads", len(t), "eps", node["additional"]["eps"])
+                f.write(struct.pack("i", len(t)))
+                f.write(struct.pack("f", node["additional"]["eps"]))
+                f.write(t.astype("<f4").tobytes())
                 
             elif node["op_type"] == OPTYPE.BitShift:
                 if verbose:

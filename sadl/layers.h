@@ -73,6 +73,10 @@
 #include "layer_gather_elements.h"
 #include "layer_global_averagepool.h"
 #include "layer_clip.h"
+#include "layer_sigmoid.h"
+#include "layer_elu.h"
+#include "layer_layernorm_channels.h"
+#include "layer_channel_attention.h"
 #include "layer_fused_matmul_adapt_quant.h"
 
 namespace sadl
@@ -129,6 +133,10 @@ inline std::string opName(const OperationType::Type op)
     DIRTYCASEPRINT(GlobalAveragePool);
     DIRTYCASEPRINT(BitShift);
     DIRTYCASEPRINT(Clip);
+    DIRTYCASEPRINT(Sigmoid);
+    DIRTYCASEPRINT(Elu);
+    DIRTYCASEPRINT(LayerNormChannels);
+    DIRTYCASEPRINT(ChannelAttention);
     DIRTYCASEPRINT(FusedMatMulAdaptQuant);
   default:
     oss << "??";
