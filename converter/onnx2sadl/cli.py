@@ -52,11 +52,21 @@ class CommandLineInterface:
         parser.add_argument(
             "--info_string", action="store", nargs="?", type=str, help="info string to put in the model"
         )
-        return parser
+        return self.optimizer_args.add_to_parser(parser)
+
+    @property
+    def optimizer_args(self):
+        # sibling package (converter/onnxopt), imported only by the command line
+        from onnxopt.optimizer_arguments import OptimizerArguments
+
+        return OptimizerArguments(embedded=True)
 
     def run(self, argv=None):
         """Returns the process exit code."""
         args = self.build_parser().parse_args(argv)
+        if self.optimizer_args.wants_list(args):
+            print("Available passes:\n" + self.optimizer_args.list_passes(args))
+            return 0
         if args.input_onnx is None:
             print("[ERROR] You should specify an onnx file", file=sys.stderr)
             return 1
@@ -70,15 +80,16 @@ class CommandLineInterface:
             print("[WARNING] no info string provided, please use --info_string to pass an info on the model")
             info_string = ""
 
-        config = ConverterConfig(
-            data_layout=self._data_layout(args),
-            verbose=args.verbose or 0,
-            user_annotations=self._user_annotations(args),
-            input_default_value=args.input_default_value,
-            force_transpose_constant_tensor_dim4=args.force_transpose_constant_tensor_dim4,
-            info_string=info_string,
-        )
         try:
+            config = ConverterConfig(
+                data_layout=self._data_layout(args),
+                verbose=args.verbose or 0,
+                user_annotations=self._user_annotations(args),
+                input_default_value=args.input_default_value,
+                force_transpose_constant_tensor_dim4=args.force_transpose_constant_tensor_dim4,
+                info_string=info_string,
+                optimizer=self.optimizer_args.build(args, max(1, args.verbose or 0)),
+            )
             Converter(config).convert(onnx.load(args.input_onnx), args.output)
         except ConversionError as e:
             print(e, file=sys.stderr)

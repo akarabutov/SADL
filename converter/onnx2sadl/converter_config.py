@@ -12,6 +12,8 @@ class ConverterConfig:
         input_default_value:  value replacing symbolic (named) input dimensions
         force_transpose_constant_tensor_dim4: transpose 4-D constants NCHW -> NHWC
         info_string:          free text stored in the model header
+        optimizer:            object with run(model) -> model (e.g. an onnxopt
+                              OptimizationPipeline) applied before conversion, or None
     """
 
     def __init__(
@@ -22,7 +24,9 @@ class ConverterConfig:
         input_default_value=128,
         force_transpose_constant_tensor_dim4=False,
         info_string="",
+        optimizer=None,
     ):
+        self.optimizer = optimizer
         self.data_layout = data_layout
         self.verbose = verbose
         self.user_annotations = user_annotations if user_annotations is not None else {}

@@ -63,6 +63,45 @@ python3 sample/pytorch.py        # produces pytorch.onnx
 python3 converter/main.py --input_onnx pytorch.onnx --output pytorch.sadl
 ```
 
+### ONNX optimization
+
+Exporters sometimes produce needlessly complex graphs (shape computations,
+Identity chains...). `converter/optimize_onnx.py` simplifies an ONNX model with
+a list of passes; by default it runs [onnx-simplifier](https://github.com/daquexian/onnx-simplifier)
+(`pip install onnxsim`):
+
+```shell
+python3 converter/optimize_onnx.py --input_onnx model.onnx --output model_opt.onnx
+python3 converter/optimize_onnx.py --list_passes
+python3 converter/optimize_onnx.py --input_onnx model.onnx --output model_opt.onnx \
+    --passes onnxsim remove_identity --plugin my_passes.py:MyPass
+```
+
+The same passes can run right before the SADL conversion: `--optimize` in
+`converter/main.py` and `converter/pytorch_to_sadl.py` (with `--optimize_passes`,
+`--optimize_plugin`, `--optimize_input_shape`), or `optimize=True` in
+`convert_pytorch_to_sadl`. Without these options the conversion is unchanged.
+
+From Python (`converter/onnxopt/`):
+
+```python
+from onnxopt import OptimizationPass, optimize_onnx
+
+class MyPass(OptimizationPass):          # or any function model -> model
+    name = "my_pass"
+    def run(self, model):
+        ...
+        return model
+
+optimized = optimize_onnx("model.onnx", "model_opt.onnx", extra_passes=[MyPass()])
+```
+
+A user pass is an `OptimizationPass` subclass or a plain function. Add it to an
+`OptimizationPipeline`, pass it in `extra_passes`, give it with `--plugin
+module:Name`, or register it by name in a `PassRegistry`. After each pass the
+model is checked with `onnx.checker`; a failing pass stops the run unless
+`--continue_on_error` / `continue_on_error=True` is set.
+
 ### PyTorch to SADL
 
 `converter/pytorch_to_sadl.py` converts a PyTorch model directly (it exports

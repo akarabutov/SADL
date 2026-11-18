@@ -62,8 +62,10 @@ class Converter:
             print("[INFO] in SADL, your inputs and outputs has been changed from NCHW to NHWC")
 
     def _prepare(self, model_proto):
-        """Deep copy (the conversion mutates the graph) with inferred shapes."""
+        """Deep copy (the conversion mutates the graph), optionally optimized, with inferred shapes."""
         model_copy = copy.deepcopy(model_proto)
+        if self.config.optimizer is not None:
+            model_copy = self.config.optimizer.run(model_copy)
         try:
             model_copy = onnx.shape_inference.infer_shapes(model_copy)
         except Exception as e:

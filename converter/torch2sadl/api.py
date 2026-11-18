@@ -34,6 +34,7 @@ def convert_pytorch_to_sadl(
     do_not_add_transpose_before=(),
     do_not_add_transpose_after=(),
     verbose=0,
+    optimize=False,
 ):
     """Convert a torch.nn.Module to a SADL file.
 
@@ -44,11 +45,15 @@ def convert_pytorch_to_sadl(
         output_path:    the .sadl file to write
         info_string:    free text stored in the SADL header
         onnx_path:      if given, also save the intermediate ONNX model there
+                        (after optimization: the model actually converted)
         opset:          ONNX opset used for the export
+        optimize:       ONNX optimization before conversion (package onnxopt):
+                        False, True (default passes), a list of pass names /
+                        OptimizationPass / functions, or an OptimizationPipeline
         other options:  same as converter/main.py (see ConverterConfig)
 
     Returns:
-        the intermediate onnx.ModelProto.
+        the converted onnx.ModelProto.
 
     Note: SADL is NHWC; 4-D inputs/outputs [1, C, H, W] become [1, H, W, C].
     """
@@ -65,8 +70,27 @@ def convert_pytorch_to_sadl(
         force_transpose_constant_tensor_dim4=force_transpose_constant_tensor_dim4,
         info_string=info_string,
     )
-    converter = PytorchToSadlConverter(PytorchOnnxExporter(opset=opset, verbose=verbose), config)
+    exporter = PytorchOnnxExporter(opset=opset, verbose=verbose)
+    converter = PytorchToSadlConverter(exporter, config, _build_optimizer(optimize, verbose))
     return converter.convert(model, example_inputs, output_path, onnx_path, input_names, output_names)
+
+
+def _build_optimizer(optimize, verbose):
+    """OptimizationPipeline (or None) from the ``optimize`` argument."""
+    if optimize is False or optimize is None:
+        return None
+    if hasattr(optimize, "run"):  # a ready pipeline
+        return optimize
+    from onnxopt.optimization_pipeline import OptimizationPipeline
+    from onnxopt.pass_registry import PassRegistry
+
+    if optimize is True:
+        return OptimizationPipeline.from_names(verbose=verbose)
+    registry = PassRegistry()
+    pipeline = OptimizationPipeline(verbose=verbose)
+    for item in optimize:
+        pipeline.add(registry.create(item) if isinstance(item, str) else item)
+    return pipeline
 
 
 def export_pytorch_to_onnx(model, example_inputs, onnx_path=None, opset=PytorchOnnxExporter.DEFAULT_OPSET):

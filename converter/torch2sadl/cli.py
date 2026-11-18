@@ -6,6 +6,7 @@ import json
 import sys
 
 from onnx2sadl.errors.conversion_error import ConversionError
+from onnxopt.optimizer_arguments import OptimizerArguments
 
 from .api import convert_pytorch_to_sadl
 from .input_spec import InputSpec
@@ -18,7 +19,7 @@ class CommandLineInterface:
 
     def build_parser(self):
         parser = argparse.ArgumentParser(prog="pytorch2sadl conversion")
-        parser.add_argument("--model", required=True, help="TorchScript file, state_dict file or pickled module")
+        parser.add_argument("--model", help="TorchScript file, state_dict file or pickled module")
         parser.add_argument(
             "--model_class",
             help="module:ClassName (or file.py:ClassName) to build the model when --model is a state_dict",
@@ -32,10 +33,9 @@ class CommandLineInterface:
         parser.add_argument(
             "--input_shape",
             action="append",
-            required=True,
             help="input shape, e.g. 1,3,64,64 (repeat for several inputs; batch must be 1)",
         )
-        parser.add_argument("--output", required=True, help="SADL file to write")
+        parser.add_argument("--output", help="SADL file to write")
         parser.add_argument("--save_onnx", help="also save the intermediate ONNX model")
         parser.add_argument("--opset", type=int, default=PytorchOnnxExporter.DEFAULT_OPSET)
         parser.add_argument("--info_string", default=None, help="info string to put in the model")
@@ -44,10 +44,24 @@ class CommandLineInterface:
         parser.add_argument("--do_not_add_transpose_before", nargs="+", default=[])
         parser.add_argument("--do_not_add_transpose_after", nargs="+", default=[])
         parser.add_argument("--verbose", action="count", default=0)
-        return parser
+        return self.optimizer_args.add_to_parser(parser)
+
+    def __init__(self):
+        self.optimizer_args = OptimizerArguments(embedded=True)
 
     def run(self, argv=None):
-        args = self.build_parser().parse_args(argv)
+        parser = self.build_parser()
+        args = parser.parse_args(argv)
+        try:
+            if self.optimizer_args.wants_list(args):
+                print("Available passes:\n" + self.optimizer_args.list_passes(args))
+                return 0
+        except ConversionError as e:
+            print(e, file=sys.stderr)
+            return 1
+        missing = [o for o in ("model", "input_shape", "output") if not getattr(args, o)]
+        if missing:
+            parser.error("the following arguments are required: " + ", ".join("--" + o for o in missing))
         print("[INFO] PyTorch to SADL converter")
         try:
             specs = [InputSpec.parse(s) for s in args.input_shape]
@@ -70,6 +84,7 @@ class CommandLineInterface:
                 do_not_add_transpose_before=args.do_not_add_transpose_before,
                 do_not_add_transpose_after=args.do_not_add_transpose_after,
                 verbose=args.verbose,
+                optimize=self.optimizer_args.build(args, max(1, args.verbose)) or False,
             )
         except (ConversionError, json.JSONDecodeError) as e:
             print(e, file=sys.stderr)
