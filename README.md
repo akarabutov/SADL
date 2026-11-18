@@ -63,6 +63,21 @@ python3 sample/pytorch.py        # produces pytorch.onnx
 python3 converter/main.py --input_onnx pytorch.onnx --output pytorch.sadl
 ```
 
+### SADL to ONNX
+
+`converter/sadl_to_onnx.py` does the reverse conversion (SADL0005 files only):
+
+```shell
+python3 converter/sadl_to_onnx.py --input_sadl model.sadl --output model.onnx
+```
+
+The ONNX model keeps the SADL NHWC layout: a PyTorch (NCHW) model comes back
+with NHWC inputs and outputs. ONNX ops defined on NCHW (Conv, pooling, Resize,
+GridSample...) are wrapped in transposes; consecutive transposes that cancel
+out are removed (`--keep_transposes` disables this). Integer fixed-point
+constants are de-quantized to float. Implementation: `converter/sadl2onnx/`
+(one `LayerEmitter` per SADL layer, registered in `emitters/emitter_registry.py`).
+
 ### Updating an old model
 
 ```shell
