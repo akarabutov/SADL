@@ -63,6 +63,34 @@ python3 sample/pytorch.py        # produces pytorch.onnx
 python3 converter/main.py --input_onnx pytorch.onnx --output pytorch.sadl
 ```
 
+### PyTorch to SADL
+
+`converter/pytorch_to_sadl.py` converts a PyTorch model directly (it exports
+it to ONNX in memory with `torch.onnx.export`, then runs the ONNX converter;
+requires `torch`):
+
+```shell
+# TorchScript file (torch.jit.save / torch.jit.trace(...).save)
+python3 converter/pytorch_to_sadl.py --model model.pt --input_shape 1,3,64,64 --output model.sadl
+# state_dict + model class (module:Class or path/to/file.py:Class)
+python3 converter/pytorch_to_sadl.py --model weights.pt --model_class mynet.py:MyNet \
+    --input_shape img:1,3,64,64 --input_shape mask:1,1,64,64 --output model.sadl --save_onnx model.onnx
+```
+
+A fully pickled module (`torch.save(model)`) is only loaded with `--allow_pickle`,
+since unpickling can run arbitrary code. The same conversion from Python:
+
+```python
+import sys
+sys.path.append("path/to/sadl/converter")
+from torch2sadl import convert_pytorch_to_sadl
+
+convert_pytorch_to_sadl(model, (1, 3, 64, 64), "model.sadl", info_string="my model v1")
+# example inputs: a shape, a tensor, or a list of shapes/tensors for several inputs
+```
+
+The batch size must be 1, and 4-D inputs/outputs become NHWC in SADL.
+
 ### SADL to ONNX
 
 `converter/sadl_to_onnx.py` does the reverse conversion (SADL0005 files only):

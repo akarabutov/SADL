@@ -27,7 +27,8 @@ class ResizeConverter(OpConverter):
         input_label = 0
         layer_inputs = [ctx.graph.resolve(inputs[0])]
         for index, name in enumerate(node.input):
-            if not ctx.is_initializer(name):
+            # initializer, or Constant node (recent PyTorch exports put scales there)
+            if not name or not ctx.model.is_static_tensor(name):
                 continue
             tensor = ctx.extract_const(name, False, allow_force_4d=True)
             if index == self.SCALES_INDEX:
