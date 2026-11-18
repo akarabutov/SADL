@@ -9,13 +9,15 @@ from .onnxsim_pass import OnnxSimPass
 from .optimization_pass import OptimizationPass
 from .remove_identity_pass import RemoveIdentityPass
 from .shape_inference_pass import ShapeInferencePass
+from .split_slices_pass import SplitSlicesPass
 
 
 class PassRegistry:
     """Name -> pass factory. Built-in passes are registered; users add their own with ``register``."""
 
-    BUILTIN = (OnnxSimPass, RemoveIdentityPass, ConstantToInitializerPass, ShapeInferencePass)
-    DEFAULT_PASSES = ("onnxsim",)
+    BUILTIN = (OnnxSimPass, SplitSlicesPass, RemoveIdentityPass, ConstantToInitializerPass, ShapeInferencePass)
+    # split_slices undoes onnxsim's Slice fusion, which SADL cannot convert
+    DEFAULT_PASSES = ("onnxsim", "split_slices")
 
     def __init__(self):
         self._factories = {}

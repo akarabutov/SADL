@@ -108,6 +108,11 @@ class ReshapeConverter(OpConverter):
             annotation.layout_onnx = global_layout
             if global_layout == "nchw":
                 annotation.to_nhwc_after_out = True
+                # The target shape is in NCHW order but a 4-D input is stored NHWC
+                # in SADL (e.g. output of a previous Reshape transposed back to
+                # NHWC): go back to NCHW first, as for a known NCHW input.
+                if pre_transpose_allowed and annotator.model.try_shape(node.input[0]) is not None:
+                    annotation.transpose_before_in0 = "nchw"
 
     @staticmethod
     def _inherit_nchw_parent(annotator, node, pre_transpose_allowed):

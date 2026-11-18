@@ -68,7 +68,8 @@ python3 converter/main.py --input_onnx pytorch.onnx --output pytorch.sadl
 Exporters sometimes produce needlessly complex graphs (shape computations,
 Identity chains...). `converter/optimize_onnx.py` simplifies an ONNX model with
 a list of passes; by default it runs [onnx-simplifier](https://github.com/daquexian/onnx-simplifier)
-(`pip install onnxsim`):
+(`pip install onnxsim`), then `split_slices`, which splits the multi-axis Slices
+fused by onnxsim back into one-axis Slices, as SADL expects:
 
 ```shell
 python3 converter/optimize_onnx.py --input_onnx model.onnx --output model_opt.onnx

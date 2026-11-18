@@ -16,3 +16,4 @@ from .optimization_pipeline import OptimizationPipeline  # noqa: F401
 from .pass_registry import PassRegistry  # noqa: F401
 from .remove_identity_pass import RemoveIdentityPass  # noqa: F401
 from .shape_inference_pass import ShapeInferencePass  # noqa: F401
+from .split_slices_pass import SplitSlicesPass  # noqa: F401
