@@ -15,12 +15,12 @@ class GatherConverter(OpConverter):
         indices_is_scalar = False
         if ctx.is_initializer(indices):
             ctx.graph.add_const(indices, ctx.extract_const(indices, False), node)
-            indices_is_scalar = len(ctx.model.shape(indices)) == 0
+            indices_is_scalar = ctx.model.shape(indices) == []
         ctx.graph.bind(indices, indices)
 
         resolve = ctx.graph.resolve
         layer_inputs = [resolve(data), resolve(indices)]
         axis = self.attribute(node, "axis")
-        if len(ctx.model.shape(data)) == 4:  # nchw -> nhwc
+        if len(ctx.model.shape(data) or []) == 4:  # nchw -> nhwc (unknown rank: left as is)
             axis.i = self.nchw_axis_to_nhwc(axis.i)
         self.emit(ctx, node, OpType.Gather, layer_inputs, axis=axis.i, indices_is_scalar=indices_is_scalar)

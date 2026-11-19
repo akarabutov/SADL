@@ -24,6 +24,6 @@ class GatherElementsConverter(OpConverter):
         resolve = ctx.graph.resolve
         layer_inputs = [resolve(data), resolve(indices)]
         axis = self.attribute(node, "axis")
-        if len(ctx.model.shape(data)) == 4:  # nchw -> nhwc
+        if len(ctx.model.shape(data) or []) == 4:  # nchw -> nhwc (unknown rank: left as is)
             axis.i = self.nchw_axis_to_nhwc(axis.i)
         self.emit(ctx, node, OpType.GatherElements, layer_inputs, axis=axis.i)

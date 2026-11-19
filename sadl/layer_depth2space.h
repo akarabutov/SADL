@@ -55,6 +55,7 @@ protected:
   virtual bool loadInternal(std::istream &file, Version v) override;
   Dimensions   dim_;   // dims after Depth2Space
   int blocksize;
+  DUMP_MODEL_EXT;
 };
 
 template<typename T> void Depth2Space<T>::process_depth2space(Tensor<T> &in, Tensor<T> &out, int factor)

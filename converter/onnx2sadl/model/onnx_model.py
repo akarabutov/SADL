@@ -120,12 +120,17 @@ class OnnxModel:
 
     @staticmethod
     def _dims_from_value_info(vi):
-        dims = []
+        """Dims of a value_info; None when the rank is unknown (no shape information).
+
+        [] would mean a scalar: confusing both made unknown 4-D tensors look like
+        scalars, so no layout transpose was inserted around them.
+        """
         if not vi.type.HasField("tensor_type"):
-            return dims
+            return None
         ttype = vi.type.tensor_type
         if not ttype.HasField("shape"):
-            return dims
+            return None
+        dims = []
         for d in ttype.shape.dim:
             which = d.WhichOneof("value")
             if which == "dim_value":
@@ -137,7 +142,7 @@ class OnnxModel:
         return dims
 
     def shape(self, name):
-        """Best known shape of ``name`` (uses shape-inference value_info)."""
+        """Best known shape of ``name`` (uses shape-inference value_info); None if the rank is unknown."""
         if name in self._initializers:
             return [int(x) for x in self._initializers[name].dims]
         node = self._first_output_producers.get(name)

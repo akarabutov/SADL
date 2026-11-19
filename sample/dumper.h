@@ -207,6 +207,20 @@ template<typename T> bool sadl::layers::Gather<T>::dump(std::ostream &file)
   return true;
 }
 
+template<typename T> bool sadl::layers::Depth2Space<T>::dump(std::ostream &file)
+{
+  int32_t x = blocksize;
+  file.write((const char *) &x, sizeof(x));
+  return true;
+}
+
+template<typename T> bool sadl::layers::BitShift<T>::dump(std::ostream &file)
+{
+  int32_t mode = m_rightDirection ? 1 : 0;   // as read by loadInternal: 1 = right
+  file.write((const char *) &mode, sizeof(mode));
+  return true;
+}
+
 template<typename T> bool sadl::layers::FusedMatMulAdaptQuant<T>::dump(std::ostream &file)
 {
   assert((std::is_same<T, int16_t>::value) && "FusedMatMulAdaptQuant dump only supports int16");

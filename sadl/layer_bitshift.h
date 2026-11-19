@@ -56,6 +56,7 @@ public:
 protected:
   virtual bool loadInternal(std::istream &file, Version v) override;
   bool  m_rightDirection;
+  DUMP_MODEL_EXT;
 };
 
 

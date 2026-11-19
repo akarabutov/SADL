@@ -32,6 +32,11 @@ class TransposeConverter(OpConverter):
             if perm[:4] == self.NCHW_TO_NHWC:
                 annotation.to_remove = True
                 annotation.layout_onnx = "nhwc"
+            elif len(perm) == 4 and annotator.global_layout == "nchw":
+                # A user transpose (e.g. swapping H and W before a MatMul) on data
+                # stored NHWC in SADL: apply it in NCHW, then go back to NHWC.
+                annotation.transpose_before_in0 = "nchw"
+                annotation.to_nhwc_after_out = True
             elif annotator.verbose > 1:
                 print("[WARNING] transpose not for NCHW handling in\n", node)
         elif annotator.global_layout == "nchw":

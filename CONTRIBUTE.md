@@ -174,9 +174,12 @@ template<typename T> bool sadl::layers::MyOp<T>::dump(std::ostream &file)
 ```
 
 Without it, tools that rewrite models (`naive_quantization`,
-`update_model_version`, `sparsify_with_packing`) silently drop the parameters.
-At the time of writing, `Depth2Space` and `BitShift` have parameters but no
-`dump()`: models containing them cannot be rewritten correctly by these tools.
+`update_model_version`, `sparsify_with_packing`) silently drop the parameters
+and produce a file that cannot be read back. Also add `DUMP_MODEL_EXT;` to the
+class declaration in `sadl/layer_myop.h` (see `sadl/layer_flatten.h`).
+
+To check, rewrite a float model with `update_model_version`: for a layer whose
+parameters are stored as read, the output must be byte-identical to the input.
 
 ### 2.3 `sample/naive_quantization.cpp`
 

@@ -27,10 +27,11 @@ class ConcatConverter(OpConverter):
     def annotate(self, annotator, node, data_layout):
         if data_layout == "nchw":
             a = self.attribute(node, "axis")
+            # an empty shape means "rank unknown" (failed shape inference): treat as None
             dims = annotator.model.try_shape(node.input[0])
-            if dims is None:
+            if not dims:
                 dims = annotator.model.try_shape(node.output[0])
-            if dims is None or len(dims) == 4:
+            if not dims or len(dims) == 4:
                 a.i = self.AXIS_NCHW_TO_NHWC.get(a.i, a.i)
 
         detector = SillyReshapeDetector(annotator.model, annotator.annotations, annotator.verbose)
