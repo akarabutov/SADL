@@ -9,6 +9,52 @@ and one integer parameter **`mode`**. Replace these with your own values.
 
 ---
 
+## Quick start: `tools/new_layer.py`
+
+Most of this guide is mechanical: the script below does it for you, then this
+guide is the reference for what it leaves to write by hand.
+
+```shell
+python tools/new_layer.py              # asks the questions of section 0
+python tools/new_layer.py --dry-run    # same, shows the diff and writes nothing
+```
+
+The script asks for the layer name, the ONNX op type(s), the number of inputs
+and which ones are constant, the parameters (`name:type`, with `int`, `bool`,
+`int[]` or `int[N]`, in binary order), the internal quantizer, the converter
+base class, the layout handling, the emitter, the CUDA variant, Netron and the
+test model. Then it:
+
+* **creates** `sadl/layer_myop.h`, the converter, the serializer and the emitter
+  if needed, `sadl_cuda/layer_myop.h` and `utests/models/my_op_pytorch.py`;
+* **registers** the layer in every file of the checklist (section 7): ids,
+  `layers.h`, `model.h`, `copy.h`, `dumper.h`, `naive_quantization.cpp`,
+  CUDA, Netron, `op_type.py`, `op_catalog.py`, serializer, reader and emitter
+  registries, plus a reminder in `utests/check.sh`;
+* **generates completely** everything that only depends on the parameters and
+  must agree byte for byte: `loadInternal`, `dump()`, the `copy.h` case, the
+  serializer, the `ListParamsReader` entry and the Netron decoder;
+* **marks** what is left with `TODO(new_layer MyOp)` (the computation in `apply`,
+  shape checks in `init`, the ONNX attribute mapping...) and writes
+  `NEW_LAYER_MyOp.md`: answers, changed files, manual steps, checklist;
+* **checks** the result: the registries load, the parameters survive a
+  serializer → reader round trip with the size `loadInternal` reads, `flake8`
+  passes, and with `--build-check` the sample tools compile.
+
+Nothing is written if a name, id or ONNX op is already taken. A change whose
+anchor is not found in an existing file is not guessed: it is listed with its
+code under "Manual steps" in `NEW_LAYER_MyOp.md`. Line endings are preserved.
+
+```shell
+python tools/new_layer.py --check MyOp                 # remaining TODO markers
+python tools/new_layer.py --config NEW_LAYER_MyOp.json --yes   # replay the answers
+python tools/new_layer.py --python /path/to/venv/python --build-check   # checks with the converter's env and a C++ compiler
+```
+
+Delete `NEW_LAYER_MyOp.md` and `NEW_LAYER_MyOp.json` before committing.
+
+---
+
 ## 0. Before you start
 
 Decide the following, since several files must agree on them:
@@ -509,7 +555,7 @@ This mirrors the serializer of step 4.5:
 ```
 
 `ListParamsReader` fields: `"name"` (int32), `"name[]"` (count + int32 list),
-`"name[4]"` (4 int32), `"name?"` (bool); `reads_quantizer=True` if the layer
+`"name[N]"` (N int32, e.g. `"pads[4]"`), `"name?"` (bool); `reads_quantizer=True` if the layer
 ends with a quantizer. For anything else, write a `LayerParamsReader` subclass.
 
 ### 5.2 Emitter — `emitters/my_op_emitter.py`

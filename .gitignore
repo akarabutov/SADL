@@ -10,3 +10,7 @@
 .idea/
 cmake-build-*/
 .DS_Store
+
+# working notes of tools/new_layer.py
+NEW_LAYER_*.md
+NEW_LAYER_*.json
