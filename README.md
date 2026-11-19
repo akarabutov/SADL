@@ -231,13 +231,15 @@ clang-format -i sadl/layer_myop.h
 - SIMD paths are optional but strongly encouraged for compute-heavy layers
   (see existing `layer_conv2d_3x3.h` for the pattern).
 
-**Adding a new layer**
-1. Create `sadl/layer_myop.h` following the pattern of an existing layer.
-2. Register the new `OperationType` value in `sadl/layers.h`.
-3. Handle the new op in the converter: add a class in `converter/onnx2sadl/ops/`
-   (one `OpConverter` subclass per ONNX op), list it in `ops/op_catalog.py`, and,
-   if the SADL layer has parameters, a serializer in `converter/onnx2sadl/writer/`
-   registered in `writer/layer_serializer_registry.py`.
+**Adding a new layer** — see **[CONTRIBUTE.md](CONTRIBUTE.md)** for the full
+procedure (C++ layer, `sample/` tools, ONNX → SADL and SADL → ONNX converters,
+tests, checklist). In short:
+1. Create `sadl/layer_myop.h` following the pattern of an existing layer, add its
+   id to `sadl/layer.h` and register it in `sadl/layers.h` and `sadl/model.h`.
+2. Update `sample/copy.h`, `sample/dumper.h` and `sample/naive_quantization.cpp`.
+3. Handle the new op in the converters: an `OpConverter` in `converter/onnx2sadl/ops/`
+   (listed in `ops/op_catalog.py`), a serializer if the layer has parameters, and
+   the matching reader and `LayerEmitter` in `converter/sadl2onnx/`.
 4. Add a unit test (see below).
 
 **Unit test** — Every new layer must have a matching test in `utests/`:
