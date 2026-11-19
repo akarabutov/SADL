@@ -19,6 +19,18 @@ class TransposeConverter(OpConverter):
         ctx.graph.bind(coef, coef)
         self.emit(ctx, node, OpType.Transpose, [ctx.graph.resolve(inputs[0]), coef])
 
+    def _annotate_on_nchw(self, annotator, node, annotation, perm):
+        if perm[:4] == self.NCHW_TO_NHWC:
+            annotation.to_remove = True
+            annotation.layout_onnx = "nhwc"
+        elif len(perm) == 4 and annotator.global_layout == "nchw":
+            # A user transpose (e.g. swapping H and W before a MatMul) on data
+            # stored NHWC in SADL: apply it in NCHW, then go back to NHWC.
+            annotation.transpose_before_in0 = "nchw"
+            annotation.to_nhwc_after_out = True
+        elif annotator.verbose > 1:
+            print("[WARNING] transpose not for NCHW handling in\n", node)
+
     def annotate(self, annotator, node, data_layout):
         annotation = annotator.annotations[node.name]
         perm = list(self.attribute(node, "perm").ints)
@@ -29,16 +41,7 @@ class TransposeConverter(OpConverter):
             elif annotator.verbose > 1:
                 print("[WARNING] transpose not for NCHW handling in\n", node)
         elif data_layout == "nchw":
-            if perm[:4] == self.NCHW_TO_NHWC:
-                annotation.to_remove = True
-                annotation.layout_onnx = "nhwc"
-            elif len(perm) == 4 and annotator.global_layout == "nchw":
-                # A user transpose (e.g. swapping H and W before a MatMul) on data
-                # stored NHWC in SADL: apply it in NCHW, then go back to NHWC.
-                annotation.transpose_before_in0 = "nchw"
-                annotation.to_nhwc_after_out = True
-            elif annotator.verbose > 1:
-                print("[WARNING] transpose not for NCHW handling in\n", node)
+            self._annotate_on_nchw(annotator, node, annotation, perm)
         elif annotator.global_layout == "nchw":
             if len(perm) == 4:  # assume a user transpose
                 annotation.transpose_before_in0 = "nchw"
